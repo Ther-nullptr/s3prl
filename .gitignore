@@ -156,3 +156,5 @@ spk2utt
 experiment
 *.tar.gz
 *.tsv
+
+wandb/

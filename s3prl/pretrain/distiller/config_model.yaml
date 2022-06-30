@@ -41,7 +41,7 @@ distiller:
   init_teacher_encoder_layers: true
 
 teacher:
-  model: hubert_base
+  model: data2vec
   n_layers: 12
 
 task:

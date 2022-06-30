@@ -224,7 +224,7 @@ class DistillerForPretrain(nn.Module):
                 "Initializing feature extractor from teacher"
             )
             self.distiller.feature_extractor.load_state_dict(
-                self.teacher.model.feature_extractor.state_dict()
+                self.teacher.model.feature_extractor.state_dict(),strict=False
             )
             if self.distiller.post_extract_proj is not None:
                 self.distiller.post_extract_proj.load_state_dict(
@@ -234,7 +234,7 @@ class DistillerForPretrain(nn.Module):
         if config.init_teacher_encoder_layers:
             print("[DistillerForPretrain] - " "Initializing encoder from teacher")
             self.distiller.encoder.pos_conv.load_state_dict(
-                self.teacher.model.encoder.pos_conv.state_dict()
+                self.teacher.model.encoder.pos_conv.state_dict(),strict=False
             )
             for l in range(config.encoder_layers):
                 self.distiller.encoder.layers[l].load_state_dict(
