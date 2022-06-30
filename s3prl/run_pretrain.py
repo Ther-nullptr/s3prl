@@ -17,6 +17,7 @@ import glob
 import random
 import argparse
 import importlib
+import wandb
 from shutil import copyfile
 from argparse import Namespace
 #-------------#
@@ -137,6 +138,8 @@ def get_pretrain_args():
 def main():
     # get config and arguments
     args, config = get_pretrain_args()
+    # enable wandb
+    wandb.init()
 
     # Fix seed and make backends deterministic
     random.seed(args.seed)
