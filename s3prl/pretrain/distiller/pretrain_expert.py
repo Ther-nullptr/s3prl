@@ -11,18 +11,16 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from pretrain.distiller.dataset import OnlineWaveDataset
 from upstream.distiller.model import DistillerConfig, DistillerModel
-from fairseq.models.hubert import HubertModel
-from fairseq.models.wav2vec import Wav2Vec2Model
 import wandb
+
+# change according to your finetuning model
+from upstream.hubert.expert import UpstreamExpert
 
 
 def freeze_model(model):
     """Freeze all parameters in a model."""
     for param in model.parameters():
         param.requires_grad = False
-    for param in model.model.parameters():
-        print(param.requires_grad)
-
 
 class UpstreamPretrainExpert(nn.Module):
     """
@@ -192,18 +190,24 @@ class DistillerForPretrain(nn.Module):
         print("[DistillerModel] - The structure of distiller model")
         print(self.distiller)
 
-        teacher = Wav2Vec2Model.from_pretrained('/mnt/lustre/sjtu/home/xc915/superb/upstream_model', checkpoint_file='wav2vec_small.pt')
         self.teacher_config = teacher_config
-        teacher = torch.hub.load("s3prl/s3prl", teacher_config.model) #! get the teacher model
-        print("[DistillerModel] - {} {} {} {}".format(type(teacher),dir(teacher),type(teacher.model),dir(teacher.model)))
-        print("[DistillerModel] - {} {}".format(teacher.parameters,teacher.model.parameters))
+        # teacher = torch.hub.load("s3prl/s3prl", teacher_config.model) #! get the teacher model
+        
+        #! get the model locally
+        teacher = UpstreamExpert(teacher_config.model_path)
         
         if (
             teacher_config.model.find("hubert") >= 0
             or teacher_config.model.find("wav2vec2") >= 0
+            or teacher_config.model.find("data2vec") >= 0
         ):
             teacher.model.encoder.layerdrop = 0
             print("[DistillerForPretrain] - Disabled teacher's encoder layerdrop")
+            
+        if(teacher_config.model.find("data2vec") >= 0):
+            print(teacher.model.state_dict)
+            teacher.model.cfg.task.normalize = False
+        
         assert self.distiller.n_tasks <= teacher_config.n_layers, (
             self.distiller.n_tasks,
             teacher_config.n_layers,

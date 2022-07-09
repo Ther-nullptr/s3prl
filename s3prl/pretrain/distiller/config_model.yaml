@@ -42,6 +42,7 @@ distiller:
 
 teacher:
   model: hubert
+  model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/hubert_base.ls960.pt
   n_layers: 12
 
 task:

@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
+import fairseq.checkpoint_utils
 
 import fairseq
 from ..interfaces import UpstreamBase

@@ -6,8 +6,9 @@ import numpy as np
 import torch.nn as nn
 from torch import Tensor
 import torch.nn.functional as F
-
-from s3prl.utility.helper import show
+import sys
+sys.path.append("..")
+from utility.helper import show
 
 SAMPLE_RATE = 16000
 TOLERABLE_SEQLEN_DIFF = 5

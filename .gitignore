@@ -158,3 +158,4 @@ experiment
 *.tsv
 
 wandb/
+debug/

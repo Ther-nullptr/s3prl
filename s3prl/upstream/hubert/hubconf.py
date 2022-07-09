@@ -43,6 +43,7 @@ def hubert(refresh=False, *args, **kwargs):
     The default model - Base
         refresh (bool): whether to download ckpt/config again if existed
     """
+    print(f'args:{args}, kwargs:{kwargs}')
     return hubert_base(refresh=refresh, *args, **kwargs)
 
 
