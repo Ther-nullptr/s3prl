@@ -34,14 +34,14 @@ distiller:
   loss_type: l1
   feat_pen_loss: 0.0
   cosine_loss: 1.0  # cosine similarity loss
-  pred_layer_id: [4, 12]
+  pred_layer_id: [4, 8]
 
   # Initialization
   init_teacher_conv_layers: true
   init_teacher_encoder_layers: true
 
 teacher:
-  model: data2vec
+  model: hubert
   n_layers: 12
 
 task:

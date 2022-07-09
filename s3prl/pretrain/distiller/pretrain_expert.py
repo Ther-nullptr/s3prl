@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from pretrain.distiller.dataset import OnlineWaveDataset
 from upstream.distiller.model import DistillerConfig, DistillerModel
+from fairseq.models.hubert import HubertModel
+from fairseq.models.wav2vec import Wav2Vec2Model
 import wandb
 
 
@@ -18,6 +20,8 @@ def freeze_model(model):
     """Freeze all parameters in a model."""
     for param in model.parameters():
         param.requires_grad = False
+    for param in model.model.parameters():
+        print(param.requires_grad)
 
 
 class UpstreamPretrainExpert(nn.Module):
@@ -184,10 +188,16 @@ class DistillerForPretrain(nn.Module):
     def __init__(self, config: DistillerConfig, teacher_config: edict):
         super().__init__()
         self.config = config
-        self.distiller = DistillerModel(config)
+        self.distiller = DistillerModel(config) #! build the distiller model #! what is the shape of config
+        print("[DistillerModel] - The structure of distiller model")
+        print(self.distiller)
 
+        teacher = Wav2Vec2Model.from_pretrained('/mnt/lustre/sjtu/home/xc915/superb/upstream_model', checkpoint_file='wav2vec_small.pt')
         self.teacher_config = teacher_config
-        teacher = torch.hub.load("s3prl/s3prl", teacher_config.model)
+        teacher = torch.hub.load("s3prl/s3prl", teacher_config.model) #! get the teacher model
+        print("[DistillerModel] - {} {} {} {}".format(type(teacher),dir(teacher),type(teacher.model),dir(teacher.model)))
+        print("[DistillerModel] - {} {}".format(teacher.parameters,teacher.model.parameters))
+        
         if (
             teacher_config.model.find("hubert") >= 0
             or teacher_config.model.find("wav2vec2") >= 0

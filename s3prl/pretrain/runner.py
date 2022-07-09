@@ -41,7 +41,7 @@ class Runner():
         self.logger = SummaryWriter(args.expdir)                                                 
 
         self.init_ckpt = torch.load(self.args.init_ckpt, map_location='cpu') if self.args.init_ckpt else {}
-        self.upstream = self._get_upstream()
+        self.upstream = self._get_upstream() #! core code to load upstream model
 
 
     def _get_upstream(self):
@@ -53,7 +53,7 @@ class Runner():
         upstream = Upstream(self.config['pretrain_expert']['datarc'], 
                             self.args.upstream_config,
                             self.args.device,
-                            self.args.multi_gpu).to(self.args.device)
+                            self.args.multi_gpu).to(self.args.device) #! return the upstream
 
         assert hasattr(upstream, 'device')
         assert hasattr(upstream, 'forward')

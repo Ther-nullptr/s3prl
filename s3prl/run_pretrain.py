@@ -139,7 +139,7 @@ def main():
     # get config and arguments
     args, config = get_pretrain_args()
     # enable wandb
-    wandb.init()
+    # wandb.init()
 
     # Fix seed and make backends deterministic
     random.seed(args.seed)
