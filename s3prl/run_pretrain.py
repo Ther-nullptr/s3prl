@@ -15,6 +15,7 @@ import re
 import yaml
 import glob
 import random
+import logging
 import argparse
 import importlib
 import wandb
@@ -139,7 +140,14 @@ def main():
     # get config and arguments
     args, config = get_pretrain_args()
     # enable wandb
-    # wandb.init()
+    wandb.init()
+
+    logging.basicConfig(level=logging.DEBUG 
+                        ,filename="debug.log" 
+                        ,filemode="w"
+                        ,format="%(asctime)s - %(name)s - %(levelname)-9s - %(filename)-8s : %(lineno)s line - %(message)s" 
+                        ,datefmt="%Y-%m-%d %H:%M:%S" 
+                        )
 
     # Fix seed and make backends deterministic
     random.seed(args.seed)

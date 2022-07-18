@@ -175,8 +175,6 @@ class UpstreamPretrainExpert(nn.Module):
                 logger.add_image(f"{prefix}{key}", values, global_step=global_step)
             elif isinstance(values, float):
                 logger.add_scalar(f"{prefix}{key}", values, global_step=global_step)
-                wandb.log({prefix:key})
-
 
 class DistillerForPretrain(nn.Module):
     """
