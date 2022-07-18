@@ -11,7 +11,7 @@
 ###############
 # IMPORTATION #
 ###############
-from packaging import version
+# from packaging import version
 
 import torch
 import torch.nn as nn
@@ -36,9 +36,9 @@ EXAMPLE_SEC = 5
 class UpstreamExpert(UpstreamBase):
     def __init__(self, ckpt, **kwargs):
         super().__init__(**kwargs)
-        assert version.parse(fairseq.__version__) > version.parse(
-            "0.10.2"
-        ), "Please install the fairseq master branch."
+        # assert version.parse(fairseq.__version__) > version.parse(
+        #     "0.10.2"
+        # ), "Please install the fairseq master branch."
 
         model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task(
             [ckpt]
@@ -66,7 +66,7 @@ class UpstreamExpert(UpstreamBase):
         return 320
 
     def forward(self, wavs):
-        if self.task.cfg.normalize:
+        if self.task.cfg.normalize: #! UpstreamExpert
             wavs = [F.layer_norm(wav, wav.shape) for wav in wavs]
 
         device = wavs[0].device
@@ -78,7 +78,7 @@ class UpstreamExpert(UpstreamBase):
         padded_wav = pad_sequence(wavs, batch_first=True)
 
         features, feat_padding_mask = self.model.extract_features(
-            padded_wav,
+            padded_wav, #! [12, 240880]
             padding_mask=wav_padding_mask,
             mask=None,
         )

@@ -41,8 +41,8 @@ distiller:
   init_teacher_encoder_layers: true
 
 teacher:
-  model: hubert
-  model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/hubert_base.ls960.pt
+  model: data2vec
+  model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/audio_base_ls.pt
   n_layers: 12
 
 task:

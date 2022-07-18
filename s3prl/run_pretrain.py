@@ -139,7 +139,7 @@ def main():
     # get config and arguments
     args, config = get_pretrain_args()
     # enable wandb
-    # wandb.init()
+    wandb.init(project='data2vec_distilling')
 
     # Fix seed and make backends deterministic
     random.seed(args.seed)
@@ -150,7 +150,7 @@ def main():
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-    runner = Runner(args, config)
+    runner = Runner(args, config) #! inside has config and models(distill and teacher)
     eval('runner.train')()
     runner.logger.close()
 

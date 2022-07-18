@@ -68,7 +68,7 @@ class Runner():
         if hasattr(upstream, 'loss_to_device'):
             print('[Runner] - Loss to device')
             upstream.loss_to_device()
-        return upstream
+        return upstream #! UpstreamPretrainExpert, inside has a distiller and teacher
 
 
     def _get_optimizer(self, model_params):
@@ -150,7 +150,7 @@ class Runner():
         records = defaultdict(list)
         prefix = f'{self.args.upstream}/train-'
 
-        while pbar.n < pbar.total:
+        while pbar.n < pbar.total: #! train steps
             for data in tqdm(dataloader, dynamic_ncols=True, desc='train'):
                 # try/except block for forward/backward
                 try:
@@ -164,7 +164,7 @@ class Runner():
                             records=records,
                             global_step=global_step,
                             log_step=self.config['runner']['log_step'],
-                        )
+                        ) #! get the loss
 
                     if gradient_accumulate_steps > 1:
                         loss = loss / gradient_accumulate_steps
