@@ -37,18 +37,18 @@ class SplitLinear(nn.Module):
         else:
             self.layer = nn.Linear(self.in_dim, self.out_dim)
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor): #! [12, 752, 1536]
         # x: shape = B x T x NDin
 
         if self.in_split == 1:
             return self.layer(x)
         else:
-            x = x.reshape(x.shape[0], x.shape[1], self.in_split, 1, self.in_dim)
+            x = x.reshape(x.shape[0], x.shape[1], self.in_split, 1, self.in_dim) #! [12, 752, 2, 1, 768]
             # x: B x T x N x 1 x Din
 
             out = torch.einsum("...klm,kmn->...kln", x, self.weight).squeeze(3)
             # out: B x T x N x Dout
-            out = out + self.bias
+            out = out + self.bias #! [12, 752, 2, 768]
 
             return out.reshape(x.shape[0], x.shape[1], -1)
 

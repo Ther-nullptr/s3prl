@@ -140,13 +140,13 @@ def main():
     # get config and arguments
     args, config = get_pretrain_args()
     # enable wandb
-    wandb.init()
+    wandb.init(project='hubert_finetune_distilling')
 
-    logging.basicConfig(level=logging.DEBUG 
-                        ,filename="debug.log" 
-                        ,filemode="w"
-                        ,format="%(asctime)s - %(name)s - %(levelname)-9s - %(filename)-8s : %(lineno)s line - %(message)s" 
-                        ,datefmt="%Y-%m-%d %H:%M:%S" 
+    logging.basicConfig(level=logging.DEBUG, 
+                        filename="debug.log", 
+                        filemode="w",
+                        format="%(asctime)s - %(name)s - %(levelname)-9s - %(filename)-8s : %(lineno)s line - %(message)s", 
+                        datefmt="%Y-%m-%d %H:%M:%S" 
                         )
 
     # Fix seed and make backends deterministic
@@ -158,7 +158,7 @@ def main():
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-    runner = Runner(args, config)
+    runner = Runner(args, config) #! inside has config and models(distill and teacher)
     eval('runner.train')()
     runner.logger.close()
 

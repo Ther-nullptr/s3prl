@@ -179,7 +179,7 @@ class DistillerModel(nn.Module):
 
         return feat, pad_mask
 
-    def forward(self, wave, pad_mask, task_id=None, get_hidden=False, no_pred=False):
+    def forward(self, wave, pad_mask, task_id=None, get_hidden=False, no_pred=False): #! to get the output of distill model
         """
         Forward function
         Input:
@@ -188,7 +188,7 @@ class DistillerModel(nn.Module):
             task_id (LongTensor): N >= 1
         """
 
-        feat, pad_mask = self.forward_feature(wave, pad_mask)
+        feat, pad_mask = self.forward_feature(wave, pad_mask) #! only feature extractor
 
         if self.task_emb_type not in ["none", "expand-last", "self-hidden"]:
             if task_id is None:
@@ -238,9 +238,9 @@ class DistillerModel(nn.Module):
             get_hidden_tmp = (
                 True if (self.task_emb_type == "self-hidden") else get_hidden
             )
-            hidden, layer_hiddens = self.encoder(
+            hidden, layer_hiddens = self.encoder( #! encoder layer(only 2 layers)
                 feat_final, ~pad_mask.bool(), get_hidden=get_hidden_tmp
-            )
+            ) #! hidden [12,752,768]
         else:
             hidden = self.encoder(feat_final)
 
@@ -248,7 +248,7 @@ class DistillerModel(nn.Module):
             if self.task_emb_type == "self-hidden":
                 pred = torch.stack([feat_final] + layer_hiddens, dim=1)
             else:
-                pred = self.output_layer(hidden).reshape(b_sz, n_sz, t_sz, -1)
+                pred = self.output_layer(hidden).reshape(b_sz, n_sz, t_sz, -1) #! output layer: Linear + GELU + SplitLinear
             # B x N x T x D
         else:
             pred = None

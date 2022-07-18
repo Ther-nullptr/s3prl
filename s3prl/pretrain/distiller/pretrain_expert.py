@@ -14,7 +14,7 @@ from upstream.distiller.model import DistillerConfig, DistillerModel
 import wandb
 
 # change according to your finetuning model
-from upstream.hubert.expert import UpstreamExpert
+from upstream.data2vec.expert import UpstreamExpert
 
 
 def freeze_model(model):
@@ -58,7 +58,7 @@ class UpstreamPretrainExpert(nn.Module):
         model_config = DistillerConfig(self.upstream_config["distiller"])
         self.model = DistillerForPretrain(
             model_config, edict(self.upstream_config["teacher"])
-        )
+        ) #! inside a model has a distiller and a teacher
 
         if self.multi_gpu:
             self.model = torch.nn.DataParallel(self.model)
@@ -111,7 +111,7 @@ class UpstreamPretrainExpert(nn.Module):
         return self.dataloader
 
     # Interface
-    def forward(self, data, records={}, global_step=0, log_step=1000, **kwargs):
+    def forward(self, data, records={}, global_step=0, log_step=1000, **kwargs): #! true forward step
         """
         Args:
             data:
@@ -131,7 +131,7 @@ class UpstreamPretrainExpert(nn.Module):
         wave_len = wave_len.to(self.device)
         pad_mask = pad_mask.type(wave_input.dtype).to(self.device)
 
-        loss, other_res = self.model(
+        loss, other_res = self.model( #! DistillerForPretrain
             wave_input,
             wave_orig,
             wave_len,
@@ -202,9 +202,9 @@ class DistillerForPretrain(nn.Module):
             teacher.model.encoder.layerdrop = 0
             print("[DistillerForPretrain] - Disabled teacher's encoder layerdrop")
             
-        if(teacher_config.model.find("data2vec") >= 0):
-            print(teacher.model.state_dict)
-            teacher.model.cfg.task.normalize = False
+        # if(teacher_config.model.find("data2vec") >= 0):
+        #     print(teacher.model.state_dict)
+        #     teacher.model.cfg.task.normalize = False
         
         assert self.distiller.n_tasks <= teacher_config.n_layers, (
             self.distiller.n_tasks,
@@ -219,14 +219,14 @@ class DistillerForPretrain(nn.Module):
             )
         )
 
-        if config.loss_type == "l1":
+        if config.loss_type == "l1": #! use l1 loss
             self.loss_func = nn.L1Loss(reduction="none")
         elif config.loss_type == "l2":
             self.loss_func = nn.MSELoss(reduction="none")
         else:
             raise NotImplementedError(config.loss_type)
 
-        self.cosine_loss = config.cosine_loss
+        self.cosine_loss = config.cosine_loss #! 1.0
         if self.cosine_loss > 0:
             print("[DistillerForPretrain] - Enabled cosine similarity loss.")
 
@@ -248,7 +248,7 @@ class DistillerForPretrain(nn.Module):
             self.distiller.encoder.pos_conv.load_state_dict(
                 self.teacher.model.encoder.pos_conv.state_dict(),strict=False
             )
-            for l in range(config.encoder_layers):
+            for l in range(config.encoder_layers): #! 2
                 self.distiller.encoder.layers[l].load_state_dict(
                     self.teacher.model.encoder.layers[l].state_dict()
                 )
@@ -272,12 +272,13 @@ class DistillerForPretrain(nn.Module):
         """
 
         # Forward model
-        feat, feat_final, pred, pad_mask = self.distiller(wave_input, pad_mask)
-
+        feat, feat_final, pred, pad_mask = self.distiller(wave_input, pad_mask) #! distiller model(the small one)
+        #! feat [12, 752, 512] BNxTxD   feat_final [12, 752, 768]  pred [12, 2, 752, 768] BxNxTxD
+        #! feat: after conv  feat_final: after proj  pred: after transformers
         with torch.no_grad():
-            wave_orig = [wave.to(wave_input.device) for wave in wave_orig]
-            with torch.cuda.amp.autocast(False):
-                teacher_hiddens = self.teacher(wave_orig)
+            wave_orig = [wave.to(wave_input.device) for wave in wave_orig] #? what is wave_orig
+            with torch.cuda.amp.autocast(False): #! teacher_hiddens: len 12, with [12, 752, 768]
+                teacher_hiddens = self.teacher(wave_orig) #! same as wave_orig, only change to list  #! forward the teacher
             if self.config.task_emb_type == "none":
                 teacher_hiddens = teacher_hiddens["hidden_states"][self.config.n_tasks]
                 teacher_hiddens = teacher_hiddens.unsqueeze(1)
@@ -289,7 +290,7 @@ class DistillerForPretrain(nn.Module):
                     ]
                 else:
                     teacher_hiddens = teacher_hiddens["hidden_states"][1:]
-                teacher_hiddens = torch.stack(teacher_hiddens, dim=1)  # B x N x T x D
+                teacher_hiddens = torch.stack(teacher_hiddens, dim=1)  # B x N x T x D #! 12->2 layers
 
         # Compute all objectives
         (
@@ -299,8 +300,11 @@ class DistillerForPretrain(nn.Module):
             feat_pen,
             sim_loss,
             sim_layer_loss,
-        ) = self.compute_loss(feat, pred, teacher_hiddens, return_other)
+        ) = self.compute_loss(feat, pred, teacher_hiddens, return_other) #! feat [12, 752, 512]  pred [12, 2, 752, 768]  teacher_hiddens [12, 2, 752, 768]
 
+        wandb.log({"total_loss": total_loss,"rec_loss":rec_loss,"sim_loss":sim_loss})
+
+        
         if return_other:
             with torch.no_grad():
                 other_res = {
@@ -349,10 +353,10 @@ class DistillerForPretrain(nn.Module):
             pred: B x N x T x D
             target: B x N x T x D
         """
-
+        #! why feat is not same as pred in last dimension(because it is the output of conv)
         # Reconstruction loss
         assert pred.shape == target.shape, (pred.shape, target.shape)
-        rec_loss = self.loss_func(pred, target)  # B x N x T x D
+        rec_loss = self.loss_func(pred, target)  # B x N x T x D #! L1 loss
 
         if return_other:
             with torch.no_grad():
@@ -364,7 +368,7 @@ class DistillerForPretrain(nn.Module):
 
         # Cosine similarity loss
         if self.cosine_loss > 0:
-            sim_loss = -F.logsigmoid(F.cosine_similarity(pred, target, dim=-1))
+            sim_loss = -F.logsigmoid(F.cosine_similarity(pred, target, dim=-1)) #! what is the dimension of every val? # sim_loss [12, 2, 752]
             # B x N x T
             if return_other:
                 with torch.no_grad():
@@ -377,7 +381,7 @@ class DistillerForPretrain(nn.Module):
             sim_layer_loss = None
 
         # Feature loss
-        feat_pen = feat.float().pow(2).mean()
+        feat_pen = feat.float().pow(2).mean() #? what is feature loss? (maybe it is not important)
 
         total_loss = (
             rec_loss

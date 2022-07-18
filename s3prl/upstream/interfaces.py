@@ -129,7 +129,7 @@ class UpstreamBase(nn.Module, metaclass=initHook):
             for layer_id, hidden_state in enumerate(result["hidden_states"]):
                 result[f"hidden_state_{layer_id}"] = hidden_state
 
-        return result
+        return result #! store all the shapes in a dict. [12, 752, 768]
 
 
 class Featurizer(nn.Module):
