@@ -41,8 +41,8 @@ distiller:
   init_teacher_encoder_layers: true
 
 teacher:
-  model: data2vec
-  model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/audio_base_ls.pt
+  model: hubert_finetune_base_local
+  model_path: /mnt/lustre/sjtu/home/xc915/superb/wyj-fairseq/outputs/hubert/libri960h_base/finetune_100h/checkpoints/checkpoint_best.pt
   n_layers: 12
 
 task:

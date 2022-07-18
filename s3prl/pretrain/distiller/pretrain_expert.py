@@ -230,6 +230,7 @@ class DistillerForPretrain(nn.Module):
         if self.cosine_loss > 0:
             print("[DistillerForPretrain] - Enabled cosine similarity loss.")
 
+        #! copy value from teacher
         if config.init_teacher_conv_layers:
             print(
                 "[DistillerForPretrain] - "

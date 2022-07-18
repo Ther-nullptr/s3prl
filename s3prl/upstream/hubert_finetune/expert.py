@@ -41,17 +41,17 @@ class UpstreamExpert(UpstreamBase):
         model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task(
             [ckpt])
         logging.info(f"model keys: {model.keys()}")
-        self.model = model[0]
+        self.model = model[0].w2v_encoder.w2v_model
         self.task = task
 
         if len(self.hooks) == 0:
-            module_name = "self.model.w2v_encoder.w2v_model.encoder.layers"
+            module_name = "self.model.encoder.layers"
             for module_id in range(len(eval(module_name))):
                 self.add_hook(
                     f"{module_name}[{module_id}]",
                     lambda input, output: input[0].transpose(0, 1),
                 )
-            self.add_hook("self.model.w2v_encoder.w2v_model.encoder",
+            self.add_hook("self.model.encoder",
                           lambda input, output: output[0])
 
             def postprocess(xs):
