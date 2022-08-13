@@ -14,7 +14,7 @@ from upstream.distiller.model import DistillerConfig, DistillerModel
 import wandb
 
 # change according to your finetuning model
-from upstream.data2vec.expert import UpstreamExpert
+from upstream.hubert.expert import UpstreamExpert
 
 
 def freeze_model(model):

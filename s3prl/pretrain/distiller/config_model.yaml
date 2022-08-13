@@ -29,20 +29,20 @@ distiller:
   out_layer_type: expand-last
 
   # Task & loss
-  n_tasks: 2
+  n_tasks: 1
   task_emb_type: expand-last
   loss_type: l1
   feat_pen_loss: 0.0
   cosine_loss: 1.0  # cosine similarity loss
-  pred_layer_id: [4, 8]
+  pred_layer_id: [6]
 
   # Initialization
   init_teacher_conv_layers: true
   init_teacher_encoder_layers: true
 
 teacher:
-  model: hubert_finetune_base_local
-  model_path: /mnt/lustre/sjtu/home/xc915/superb/wyj-fairseq/outputs/hubert/libri960h_base/finetune_100h/checkpoints/checkpoint_best.pt
+  model: hubert
+  model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/hubert_base.ls960.pt 
   n_layers: 12
 
 task:
