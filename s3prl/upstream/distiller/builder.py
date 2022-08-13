@@ -59,8 +59,9 @@ class DistillerBuilder(nn.Module):
             model.load_state_dict(state_dict)
             if verbose:
                 print("[DistillerBuilder] - Pre-trained weights loaded!")
+                print(model)
             return model
-        except:
+        except: 
             raise RuntimeError("[DistillerBuilder] - Pre-trained weights NOT loaded!")
 
     def process_input_data(self, wave, wave_len):
