@@ -40,7 +40,7 @@ class UpstreamExpert(UpstreamBase):
         logging.info("Load model from upstream.")
         model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task(
             [ckpt])
-        logging.info(f"model keys: {model.keys()}")
+        logging.info(f"model[0]: {model[0]}")
         self.model = model[0].w2v_encoder.w2v_model
         self.task = task
 
