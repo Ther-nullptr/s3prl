@@ -140,9 +140,9 @@ def main():
     # get config and arguments
     args, config = get_pretrain_args()
     # enable wandb
-    wandb.init(project='hubert_finetune_distilling')
+    wandb.init(project='hubert_distill_4_8_12')
 
-    logging.basicConfig(level=logging.DEBUG, 
+    logging.basicConfig(level=logging.INFO, 
                         filename="debug.log", 
                         filemode="w",
                         format="%(asctime)s - %(name)s - %(levelname)-9s - %(filename)-8s : %(lineno)s line - %(message)s", 
