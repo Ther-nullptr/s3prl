@@ -190,10 +190,10 @@ class DistillerForPretrain(nn.Module):
 
         self.teacher_config = teacher_config
         # teacher = torch.hub.load("s3prl/s3prl", teacher_config.model) #! get the teacher model
-        
+
         #! get the model locally
         teacher = UpstreamExpert(teacher_config.model_path)
-        
+
         if (
             teacher_config.model.find("hubert") >= 0
             or teacher_config.model.find("wav2vec2") >= 0
@@ -201,11 +201,11 @@ class DistillerForPretrain(nn.Module):
         ):
             teacher.model.encoder.layerdrop = 0
             print("[DistillerForPretrain] - Disabled teacher's encoder layerdrop")
-            
+
         # if(teacher_config.model.find("data2vec") >= 0):
         #     print(teacher.model.state_dict)
         #     teacher.model.cfg.task.normalize = False
-        
+
         assert self.distiller.n_tasks <= teacher_config.n_layers, (
             self.distiller.n_tasks,
             teacher_config.n_layers,
@@ -287,7 +287,7 @@ class DistillerForPretrain(nn.Module):
                 if self.config.task_emb_type in ["expand-last", "hnet", "self-hidden"]:
                     teacher_hiddens = [
                         teacher_hiddens["hidden_states"][i]
-                        for i in self.distiller.pred_layer_id
+                        for i in range(len(teacher_hiddens["hidden_states"]))
                     ]
                 else:
                     teacher_hiddens = teacher_hiddens["hidden_states"][1:]
@@ -303,9 +303,12 @@ class DistillerForPretrain(nn.Module):
             sim_layer_loss,
         ) = self.compute_loss(feat, pred, teacher_hiddens, return_other) #! feat [12, 752, 512]  pred [12, 2, 752, 768]  teacher_hiddens [12, 2, 752, 768]
 
-        wandb.log({"total_loss": total_loss,"rec_loss":rec_loss,"sim_loss":sim_loss})
+        wandb.log({
+            "total_loss": total_loss,
+            "rec_loss": rec_loss,
+            "sim_loss": sim_loss
+        })
 
-        
         if return_other:
             with torch.no_grad():
                 other_res = {
@@ -352,20 +355,57 @@ class DistillerForPretrain(nn.Module):
         Inputs:
             feat: B x T x D
             pred: B x N x T x D
-            target: B x N x T x D
+            target: B x 12 x T x D
         """
         #! why feat is not same as pred in last dimension(because it is the output of conv)
-        # Reconstruction loss
-        assert pred.shape == target.shape, (pred.shape, target.shape)
-        rec_loss = self.loss_func(pred, target)  # B x N x T x D #! L1 loss
+        # choose the min loss
+        # device = transformed_s_layer_o[0].device
+        # for t_layer_o in specified_teacher_layer_reps:
+        #     for i, s_layer_o in enumerate(transformed_s_layer_o): #! student: 12x[32,113,768]
+        #         l.append(mse_loss(t_layer_o, s_layer_o))
+        # layerwiseloss = torch.stack(l).reshape(
+        #     len(specified_teacher_layer_reps), len(student_layer_output)) #! [4,12]
 
-        if return_other:
-            with torch.no_grad():
-                rec_layer_loss = rec_loss.mean((0, 2, 3))
-        else:
-            rec_layer_loss = None
+        pred_layer_output_list = []
+        target_layer_output_list = []
+        l = []
 
-        rec_loss = rec_loss.mean()
+        pred = pred.transpose(0,1) # B x 12 x T x D -> 12 x B x T x D
+        target = target.transpose(0,1) # B x N x T x D -> N x B x T x D
+
+        for i in range(pred.shape[0]):
+            pred_layer_output_list.append(pred[i])
+
+        for j in range(target.shape[0]):
+            target_layer_output_list.append(target[j])
+
+        device = pred_layer_output_list[0].device
+        for pred_layer_output in pred_layer_output_list:
+            for target_layer_output in target_layer_output_list:
+                l.append(self.loss_func(target_layer_output, pred_layer_output))
+        layerwiseloss = torch.stack(l).reshape(
+            len(pred_layer_output_list), len(target_layer_output_list)
+        )
+
+        rec_loss = 0
+        last_aligned_layer = 12
+        alignment = []
+        for search_index in range(3, -1, -1):
+            indexes = layerwiseloss[search_index].sort()[1]
+            align = indexes[indexes < last_aligned_layer]
+            if len(align) > 0:
+                align = align[0]
+            else:
+                align = last_aligned_layer
+            alignment.append(align)
+            last_aligned_layer = align
+        alignment.reverse()
+        alignment = torch.tensor(alignment).to(device)
+
+        layerwise = torch.arange(4).to(device)
+        rec_loss += layerwiseloss[layerwise, alignment].sum() #! layerwise: teacher (specified layers) / alignment: student (min loss layers) / layerwiseloss: [4,12]
+        for i in len(alignment):
+            wandb.log({f"align_{i+1}": int(alignment[i])})
 
         # Cosine similarity loss
         if self.cosine_loss > 0:
