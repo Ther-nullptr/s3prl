@@ -61,10 +61,15 @@ class DistillerConfig:
         self.loss_type = str(config.get("loss_type", "l1"))
         self.feat_pen_loss = float(config.get("feat_pen_loss", 0.0))
         self.cosine_loss = float(config.get("cosine_loss", 0.0))
+        self.hidden_loss = float(config.get("hidden_loss", 0.0))
+        self.attn_loss = float(config.get("attn_loss", 0.0))
 
         # When task_emb_type == 'expand-last' only
         self.pred_layer_id = list(
             config.get("pred_layer_id", range(1, self.n_tasks + 1))
+        )
+        self.pred_layer_id_2 = list(
+            config.get("pred_layer_id_2", range(1, self.n_tasks + 1))
         )
 
         # Initialization
@@ -120,6 +125,7 @@ class DistillerModel(nn.Module):
             print(f"[DistillerModel] - Pred layers: {self.pred_layer_id}")
         elif self.task_emb_type == "self-hidden":
             self.pred_layer_id = config.pred_layer_id
+            self.pred_layer_id_2 = config.pred_layer_id_2
             assert self.n_tasks == len(self.pred_layer_id)
             assert self.n_tasks == config.encoder_layers + 1
             print("[DistillerModel] - Predicting with self-hidden layers")
@@ -238,7 +244,7 @@ class DistillerModel(nn.Module):
             get_hidden_tmp = (
                 True if (self.task_emb_type == "self-hidden") else get_hidden
             )
-            hidden, layer_hiddens = self.encoder( #! encoder layer(only 2 layers)
+            hidden, layer_hiddens, attn_hiddens = self.encoder( #! encoder layer(only 2 layers)
                 feat_final, ~pad_mask.bool(), get_hidden=get_hidden_tmp
             ) #! hidden [12,752,768]
         else:
@@ -263,7 +269,7 @@ class DistillerModel(nn.Module):
             # B x N x T x D
 
         if get_hidden:
-            return feat, feat_final, pred, pad_mask, layer_hiddens
+            return feat, feat_final, pred, pad_mask, layer_hiddens, attn_hiddens
         else:
             return feat, feat_final, pred, pad_mask
 

@@ -190,10 +190,10 @@ class DistillerForPretrain(nn.Module):
 
         self.teacher_config = teacher_config
         # teacher = torch.hub.load("s3prl/s3prl", teacher_config.model) #! get the teacher model
-        
+
         #! get the model locally
         teacher = UpstreamExpert(teacher_config.model_path)
-        
+
         if (
             teacher_config.model.find("hubert") >= 0
             or teacher_config.model.find("wav2vec2") >= 0
@@ -201,11 +201,11 @@ class DistillerForPretrain(nn.Module):
         ):
             teacher.model.encoder.layerdrop = 0
             print("[DistillerForPretrain] - Disabled teacher's encoder layerdrop")
-            
+
         # if(teacher_config.model.find("data2vec") >= 0):
         #     print(teacher.model.state_dict)
         #     teacher.model.cfg.task.normalize = False
-        
+
         assert self.distiller.n_tasks <= teacher_config.n_layers, (
             self.distiller.n_tasks,
             teacher_config.n_layers,
@@ -229,6 +229,14 @@ class DistillerForPretrain(nn.Module):
         self.cosine_loss = config.cosine_loss #! 1.0
         if self.cosine_loss > 0:
             print("[DistillerForPretrain] - Enabled cosine similarity loss.")
+
+        self.hidden_loss = config.hidden_loss #! 1.0
+        if self.hidden_loss > 0:
+            print("[DistillerForPretrain] - Enabled hidden loss.")
+
+        self.attn_loss = config.attn_loss #! 1.0
+        if self.attn_loss > 0:
+            print("[DistillerForPretrain] - Enabled attn loss.")
 
         #! copy value from teacher
         if config.init_teacher_conv_layers:
@@ -273,7 +281,10 @@ class DistillerForPretrain(nn.Module):
         """
 
         # Forward model
-        feat, feat_final, pred, pad_mask = self.distiller(wave_input, pad_mask) #! distiller model(the small one)
+        if self.config.get_hidden == False:
+            feat, feat_final, pred, pad_mask = self.distiller(wave_input, pad_mask) #! distiller model(the small one)
+        else:
+            feat, feat_final, pred, pad_mask, student_hiddens, student_attns = self.distiller(wave_input, pad_mask, get_hidden=True)
         #! feat [12, 752, 512] BNxTxD   feat_final [12, 752, 768]  pred [12, 2, 752, 768] BxNxTxD
         #! feat: after conv  feat_final: after proj  pred: after transformers
         with torch.no_grad():
@@ -286,25 +297,63 @@ class DistillerForPretrain(nn.Module):
             else:
                 if self.config.task_emb_type in ["expand-last", "hnet", "self-hidden"]:
                     teacher_hiddens = [
-                        teacher_hiddens["hidden_states"][i]
+                        teacher_hiddens["hidden_states"][i][0]
                         for i in self.distiller.pred_layer_id
                     ]
                 else:
                     teacher_hiddens = teacher_hiddens["hidden_states"][1:]
                 teacher_hiddens = torch.stack(teacher_hiddens, dim=1)  # B x N x T x D #! 12->2 layers
 
+            teacher_hiddens_2 = [
+                teacher_hiddens["hidden_states"][i][0]
+                for i in self.distiller.pred_layer_id_2
+            ]
+            teacher_hiddens_2 = torch.stack(teacher_hiddens_2, dim=1)  # B x N x T x D #! 12->2 layers
+
+            teacher_attns = [
+                teacher_hiddens["hidden_states"][i][1]
+                for i in self.distiller.pred_layer_id_2
+            ]
+            teacher_attns = torch.stack(teacher_attns, dim=1)  # B x N x T x D #! 12->2 layers
+
         # Compute all objectives
-        (
-            total_loss,
-            rec_loss,
-            rec_layer_loss,
-            feat_pen,
-            sim_loss,
-            sim_layer_loss,
-        ) = self.compute_loss(feat, pred, teacher_hiddens, return_other) #! feat [12, 752, 512]  pred [12, 2, 752, 768]  teacher_hiddens [12, 2, 752, 768]
+        if self.config.get_hidden == False:
+            (
+                total_loss,
+                rec_loss,
+                rec_layer_loss,
+                feat_pen,
+                sim_loss,
+                sim_layer_loss,
+            ) = self.compute_loss(feat, pred, teacher_hiddens, return_other) #! feat [12, 752, 512]  pred [12, 2, 752, 768]  teacher_hiddens [12, 2, 752, 768]
 
-        wandb.log({"total_loss": total_loss,"rec_loss":rec_loss,"sim_loss":sim_loss})
+            wandb.log({
+                "total_loss": total_loss,
+                "rec_loss": rec_loss,
+                "sim_loss": sim_loss
+            })
 
+        else:
+            (
+                total_loss,
+                rec_loss,
+                rec_layer_loss,
+                feat_pen,
+                sim_loss,
+                sim_layer_loss,
+                hidden_loss, 
+                hidden_layer_loss, 
+                attn_loss, 
+                attn_layer_loss
+            ) = self.compute_loss_hidden(feat, pred, teacher_hiddens, teacher_hiddens_2, teacher_attns, student_hiddens, student_attns, return_other) #! feat [12, 752, 512]  pred [12, 2, 752, 768]  teacher_hiddens [12, 2, 752, 768]
+            
+            wandb.log({
+                "total_loss": total_loss,
+                "rec_loss": rec_loss,
+                "sim_loss": sim_loss,
+                "hidden_loss": hidden_loss,
+                "attn_loss": attn_loss
+            })
         
         if return_other:
             with torch.no_grad():
@@ -391,3 +440,76 @@ class DistillerForPretrain(nn.Module):
         )
 
         return total_loss, rec_loss, rec_layer_loss, feat_pen, sim_loss, sim_layer_loss
+
+    def compute_loss_hidden(self, feat, pred, target, teacher_hiddens, teacher_attns, student_hiddens, student_attns, return_other=False):
+        """
+        Computes loss.
+        Inputs:
+            feat: B x T x D
+            pred: B x N x T x D
+            target: B x N x T x D
+            student_hidden: L, B x T x D
+            student_attn: L,
+        """
+        # Reconstruction loss
+        assert pred.shape == target.shape, (pred.shape, target.shape)
+        rec_loss = self.loss_func(pred, target)  # B x N x T x D #! L1 loss
+
+        if return_other:
+            with torch.no_grad():
+                rec_layer_loss = rec_loss.mean((0, 2, 3))
+        else:
+            rec_layer_loss = None
+
+        rec_loss = rec_loss.mean()
+
+        # Cosine similarity loss
+        if self.cosine_loss > 0:
+            sim_loss = -F.logsigmoid(F.cosine_similarity(pred, target, dim=-1)) #! what is the dimension of every val? # sim_loss [12, 2, 752]
+            # B x N x T
+            if return_other:
+                with torch.no_grad():
+                    sim_layer_loss = sim_loss.mean((0, 2))
+            else:
+                sim_layer_loss = None
+            sim_loss = sim_loss.mean()
+        else:
+            sim_loss = 0
+            sim_layer_loss = None
+
+        # hidden loss
+        assert teacher_hiddens.shape == student_hiddens.shape
+        hidden_loss = self.loss_func(teacher_hiddens, student_hiddens)  # B x N x T x D #! L1 loss
+
+        if return_other:
+            with torch.no_grad():
+                hidden_layer_loss = hidden_loss.mean((0, 2, 3))
+        else:
+            hidden_layer_loss = None
+        hidden_loss = hidden_loss.mean()
+
+        # attn loss
+        assert teacher_attns.shape == student_attns.shape
+        attn_loss = self.loss_func(teacher_attns, student_attns)  # B x N x T x D #! L1 loss
+
+        if return_other:
+            with torch.no_grad():
+                attn_layer_loss = attn_loss.mean((0, 2, 3))
+        else:
+            attn_layer_loss = None
+        attn_loss = attn_loss.mean()
+
+        # Feature loss
+        feat_pen = feat.float().pow(2).mean() #? what is feature loss? (maybe it is not important)
+
+        total_loss = 0
+
+        total_loss = (
+            rec_loss
+            + feat_pen * self.config.feat_pen_loss
+            + sim_loss * self.cosine_loss
+            + hidden_loss * self.hidden_loss
+            + attn_loss * self.attn_loss
+        )
+
+        return total_loss, rec_loss, rec_layer_loss, feat_pen, sim_loss, sim_layer_loss, hidden_loss, hidden_layer_loss, attn_loss, attn_layer_loss
