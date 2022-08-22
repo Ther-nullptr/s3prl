@@ -194,6 +194,8 @@ class DistillerModel(nn.Module):
             task_id (LongTensor): N >= 1
         """
 
+        get_hidden = True
+
         feat, pad_mask = self.forward_feature(wave, pad_mask) #! only feature extractor
 
         if self.task_emb_type not in ["none", "expand-last", "self-hidden"]:

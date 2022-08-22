@@ -34,7 +34,10 @@ distiller:
   loss_type: l1
   feat_pen_loss: 0.0
   cosine_loss: 1.0  # cosine similarity loss
-  pred_layer_id: [6]
+  hidden_loss: 1.0  # hidden loss
+  attn_loss: 1.0 # attn loss
+  pred_layer_id: [12] # layers for predict head loss
+  pred_layer_id_2: [4,8] # layers for hidden & attn loss
 
   # Initialization
   init_teacher_conv_layers: true
