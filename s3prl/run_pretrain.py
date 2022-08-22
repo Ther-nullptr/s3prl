@@ -168,7 +168,7 @@ def main():
     # get config and arguments
     args, config = get_pretrain_args()
     # enable wandb
-    wandb.init(project='hubert_distill_4_8_12')
+    wandb.init(project=args.expname)
 
     logging.basicConfig(
         level=logging.INFO,

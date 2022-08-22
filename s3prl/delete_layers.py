@@ -2,7 +2,7 @@ import sys
 import torch
 
 hubert_model_path = '/mnt/lustre/sjtu/home/xc915/superb/upstream_model/hubert_base.ls960.pt'
-maintain_layers = [10,11]
+maintain_layers = [0,1]
 maintain_str = ''
 for layer in maintain_layers:
     maintain_str += str(layer)
