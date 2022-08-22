@@ -305,6 +305,11 @@ class DistillerForPretrain(nn.Module):
 
         wandb.log({"total_loss": total_loss,"rec_loss":rec_loss,"sim_loss":sim_loss})
 
+        for i, item in enumerate(rec_layer_loss):
+            wandb.log({f"rec_layer_loss_{i}":item})
+
+        for i, item in enumerate(sim_layer_loss):
+            wandb.log({f"sim_layer_loss_{i}":item})
         
         if return_other:
             with torch.no_grad():
@@ -356,6 +361,7 @@ class DistillerForPretrain(nn.Module):
         """
         #! why feat is not same as pred in last dimension(because it is the output of conv)
         # Reconstruction loss
+        return_other = True
         assert pred.shape == target.shape, (pred.shape, target.shape)
         rec_loss = self.loss_func(pred, target)  # B x N x T x D #! L1 loss
 
