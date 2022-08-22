@@ -139,11 +139,11 @@ class UpstreamPretrainExpert(nn.Module):
             return_other=global_step % log_step == 0,
         )
 
-        if global_step % log_step == 0:
-            for key, value in other_res.items():
-                if isinstance(value, torch.Tensor):
-                    value = float(value.mean().cpu().item())
-                records[key] = value
+        # if global_step % log_step == 0:
+        #     for key, value in other_res.items():
+        #         if isinstance(value, torch.Tensor):
+        #             value = float(value.mean().cpu().item())
+        #         records[key] = value
 
         return loss, records
 
@@ -309,6 +309,7 @@ class DistillerForPretrain(nn.Module):
             "sim_loss": sim_loss
         })
 
+        return_other = False
         if return_other:
             with torch.no_grad():
                 other_res = {
@@ -355,7 +356,7 @@ class DistillerForPretrain(nn.Module):
         Inputs:
             feat: B x T x D
             pred: B x N x T x D
-            target: B x 12 x T x D
+            target: B x 13 x T x D
         """
         #! why feat is not same as pred in last dimension(because it is the output of conv)
         # choose the min loss
@@ -370,8 +371,8 @@ class DistillerForPretrain(nn.Module):
         target_layer_output_list = []
         l = []
 
-        pred = pred.transpose(0,1) # B x 12 x T x D -> 12 x B x T x D
-        target = target.transpose(0,1) # B x N x T x D -> N x B x T x D
+        pred = pred.transpose(0,1)  # B x N x T x D -> N x B x T x D 
+        target = target.transpose(0,1)[1:] # B x 12 x T x D -> 12 x B x T x D
 
         for i in range(pred.shape[0]):
             pred_layer_output_list.append(pred[i])
@@ -382,15 +383,16 @@ class DistillerForPretrain(nn.Module):
         device = pred_layer_output_list[0].device
         for pred_layer_output in pred_layer_output_list:
             for target_layer_output in target_layer_output_list:
-                l.append(self.loss_func(target_layer_output, pred_layer_output))
+                l.append(self.loss_func(target_layer_output, pred_layer_output).mean()-self.cosine_loss*F.logsigmoid(F.cosine_similarity(target_layer_output, pred_layer_output, dim=-1)).mean())
         layerwiseloss = torch.stack(l).reshape(
             len(pred_layer_output_list), len(target_layer_output_list)
         )
+        print(layerwiseloss)
 
-        rec_loss = 0
+        total_loss = 0
         last_aligned_layer = 12
         alignment = []
-        for search_index in range(3, -1, -1):
+        for search_index in range(len(pred_layer_output_list)-1, -1, -1):
             indexes = layerwiseloss[search_index].sort()[1]
             align = indexes[indexes < last_aligned_layer]
             if len(align) > 0:
@@ -402,32 +404,14 @@ class DistillerForPretrain(nn.Module):
         alignment.reverse()
         alignment = torch.tensor(alignment).to(device)
 
-        layerwise = torch.arange(4).to(device)
-        rec_loss += layerwiseloss[layerwise, alignment].sum() #! layerwise: teacher (specified layers) / alignment: student (min loss layers) / layerwiseloss: [4,12]
-        for i in len(alignment):
+        layerwise = torch.arange(len(pred_layer_output_list)).to(device)
+        total_loss += layerwiseloss[layerwise, alignment].sum() #! layerwise: teacher (specified layers) / alignment: student (min loss layers) / layerwiseloss: [4,12]
+        print(str(alignment))
+        for i in range(len(alignment)):
             wandb.log({f"align_{i+1}": int(alignment[i])})
-
-        # Cosine similarity loss
-        if self.cosine_loss > 0:
-            sim_loss = -F.logsigmoid(F.cosine_similarity(pred, target, dim=-1)) #! what is the dimension of every val? # sim_loss [12, 2, 752]
-            # B x N x T
-            if return_other:
-                with torch.no_grad():
-                    sim_layer_loss = sim_loss.mean((0, 2))
-            else:
-                sim_layer_loss = None
-            sim_loss = sim_loss.mean()
-        else:
-            sim_loss = 0
-            sim_layer_loss = None
 
         # Feature loss
         feat_pen = feat.float().pow(2).mean() #? what is feature loss? (maybe it is not important)
+        total_loss = total_loss + feat_pen * self.config.feat_pen_loss
 
-        total_loss = (
-            rec_loss
-            + feat_pen * self.config.feat_pen_loss
-            + sim_loss * self.cosine_loss
-        )
-
-        return total_loss, rec_loss, rec_layer_loss, feat_pen, sim_loss, sim_layer_loss
+        return total_loss, None, None, feat_pen, None, None
