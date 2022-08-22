@@ -248,16 +248,16 @@ class TransformerEncoder(nn.Module):
         self.apply(init_bert_params)
 
     def forward(self, x, padding_mask=None, attn_mask=None, get_hidden=False):
-        x, layer_results = self.extract_features(
+        x, layer_results, attn_results = self.extract_features(
             x, padding_mask, attn_mask, get_hidden=get_hidden
         )
 
         if self.layer_norm_first:
             x = self.layer_norm(x)
 
-        return x, layer_results
+        return x, layer_results, attn_results
 
-    def extract_features(self, x, padding_mask=None, attn_mask=None, get_hidden=False):
+    def extract_features(self, x, padding_mask=None, attn_mask=None, get_hidden=False, get_attn=False):
 
         if padding_mask is not None:
             x[padding_mask] = 0
@@ -275,19 +275,22 @@ class TransformerEncoder(nn.Module):
         x = x.transpose(0, 1)
 
         layer_results = []
+        attn_results = []
         for i, layer in enumerate(self.layers):
             dropout_probability = np.random.random()
             if not self.training or (dropout_probability > self.layerdrop):
-                x, z = layer(
+                x, attn = layer(
                     x,
                     self_attn_padding_mask=padding_mask,
                     need_weights=False,
                     self_attn_mask=attn_mask,
                 )
+                if get_attn:
+                    attn_results.append(attn)
                 if get_hidden:
                     layer_results.append(x.transpose(0, 1))
 
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
 
-        return x, layer_results
+        return x, layer_results, attn_results
