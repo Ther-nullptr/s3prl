@@ -40,7 +40,7 @@ class OnlineWaveDataset(WaveDataset):
     def _load_feat(self, feat_path):
         if self.libri_root is None:
             return torch.FloatTensor(np.load(os.path.join(self.root, feat_path)))
-        wav, _ = torchaudio.load(os.path.join(self.libri_root, feat_path))
+        wav, _ = torchaudio.load(os.path.join(self.libri_root, feat_path), normalize=True)
         return wav.squeeze()  # (seq_len)
 
     def __getitem__(self, index):

@@ -461,8 +461,8 @@ class DistillerForPretrain(nn.Module):
             feat: B x T x D
             pred: B x N x T x D
             target: B x N x T x D
-            student_hidden: L, B x T x D
-            student_attn: L,
+            student_hidden: B x N x T x D
+            student_attn: B x N x T x D
         """
         # Reconstruction loss
         assert pred.shape == target.shape, (pred.shape, target.shape)
