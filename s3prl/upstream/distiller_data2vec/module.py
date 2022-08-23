@@ -10,14 +10,13 @@ from torch import nn
 import torch.nn.functional as F
 
 from fairseq import utils
-from fairseq.modules import MultiheadAttention, SamePad, DynamicConv
+from fairseq.modules import MultiheadAttention, SamePad, LayerNorm, TransposeLast, DynamicConv
 from fairseq.modules.sparse_multihead_attention import SparseMultiheadAttention
 from fairseq.modules.transformer_sentence_encoder import init_bert_params
 
 
 class SplitLinear(nn.Module):
     """Split Linear Layer"""
-
     def __init__(self, in_dim, in_split, out_dim):
         super().__init__()
 
@@ -29,26 +28,29 @@ class SplitLinear(nn.Module):
             # weight = torch.zeros((1, 1, self.in_split, self.in_dim, self.out_dim))
             weight = torch.zeros((self.in_split, self.in_dim, self.out_dim))
             self.weight = nn.Parameter(weight, requires_grad=True)
-            nn.init.uniform_(self.weight, -(self.in_dim ** -0.5), self.in_dim ** -0.5)
+            nn.init.uniform_(self.weight, -(self.in_dim**-0.5),
+                             self.in_dim**-0.5)
 
             bias = torch.zeros((1, 1, self.in_split, self.out_dim))
             self.bias = nn.Parameter(bias, requires_grad=True)
-            nn.init.uniform_(self.bias, -(self.in_dim ** -0.5), self.in_dim ** -0.5)
+            nn.init.uniform_(self.bias, -(self.in_dim**-0.5),
+                             self.in_dim**-0.5)
         else:
             self.layer = nn.Linear(self.in_dim, self.out_dim)
 
-    def forward(self, x: torch.Tensor): #! [12, 752, 1536]
+    def forward(self, x: torch.Tensor):  #! [12, 752, 1536]
         # x: shape = B x T x NDin
 
         if self.in_split == 1:
             return self.layer(x)
         else:
-            x = x.reshape(x.shape[0], x.shape[1], self.in_split, 1, self.in_dim) #! [12, 752, 2, 1, 768]
+            x = x.reshape(x.shape[0], x.shape[1], self.in_split, 1,
+                          self.in_dim)  #! [12, 752, 2, 1, 768]
             # x: B x T x N x 1 x Din
 
             out = torch.einsum("...klm,kmn->...kln", x, self.weight).squeeze(3)
             # out: B x T x N x Dout
-            out = out + self.bias #! [12, 752, 2, 768]
+            out = out + self.bias  #! [12, 752, 2, 768]
 
             return out.reshape(x.shape[0], x.shape[1], -1)
 
@@ -58,7 +60,6 @@ class TransformerSentenceEncoderLayer(nn.Module):
     Implements a Transformer Encoder Layer used in BERT/XLM style pre-trained
     models.
     """
-
     def __init__(
         self,
         embedding_dim: float = 768,
@@ -108,7 +109,8 @@ class TransformerSentenceEncoderLayer(nn.Module):
                 bias=True,
             )
         else:
-            raise NotImplementedError(f"Unknown attention type {attention_type}")
+            raise NotImplementedError(
+                f"Unknown attention type {attention_type}")
 
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(self.activation_dropout)
@@ -216,30 +218,46 @@ class TransformerEncoder(nn.Module):
             groups=args.conv_pos_groups,
         )
         dropout = 0
-        std = math.sqrt((4 * (1.0 - dropout)) / (args.conv_pos * self.embedding_dim))
+        std = math.sqrt(
+            (4 * (1.0 - dropout)) / (args.conv_pos * self.embedding_dim))
         nn.init.normal_(self.pos_conv.weight, mean=0, std=std)
         nn.init.constant_(self.pos_conv.bias, 0)
 
-        self.pos_conv = nn.utils.weight_norm(self.pos_conv, name="weight", dim=2)
-        self.pos_conv = nn.Sequential(self.pos_conv, SamePad(args.conv_pos), nn.GELU())
+        if args.extractor_mode == 'default':
+            self.pos_conv = nn.utils.weight_norm(self.pos_conv,
+                                                 name="weight",
+                                                 dim=2)
+            self.pos_conv = nn.Sequential(self.pos_conv,
+                                          SamePad(args.conv_pos), nn.GELU())
 
+        else:
+            self.pos_conv = nn.utils.weight_norm(self.pos_conv,
+                                                 name="weight",
+                                                 dim=2)
+            self.pos_conv = nn.Sequential(*[
+                nn.Sequential(
+                    self.pos_conv, SamePad(args.conv_pos),
+                    nn.Sequential(
+                        TransposeLast(),
+                        LayerNorm(self.embedding_dim, elementwise_affine=True),
+                        TransposeLast(),
+                    ), nn.GELU()) for i in range(5)
+            ])
+            
         print(f"[TransformerEncoder] - Attention type = {args.attention_type}")
-        self.layers = nn.ModuleList(
-            [
-                TransformerSentenceEncoderLayer(
-                    embedding_dim=self.embedding_dim,
-                    ffn_embedding_dim=args.encoder_ffn_embed_dim,
-                    num_attention_heads=args.encoder_attention_heads,
-                    dropout=self.dropout,
-                    attention_dropout=args.attention_dropout,
-                    activation_dropout=args.activation_dropout,
-                    activation_fn=args.activation_fn,
-                    layer_norm_first=args.layer_norm_first,
-                    attention_type=args.attention_type,
-                )
-                for _ in range(args.encoder_layers)
-            ]
-        )
+        self.layers = nn.ModuleList([
+            TransformerSentenceEncoderLayer(
+                embedding_dim=self.embedding_dim,
+                ffn_embedding_dim=args.encoder_ffn_embed_dim,
+                num_attention_heads=args.encoder_attention_heads,
+                dropout=self.dropout,
+                attention_dropout=args.attention_dropout,
+                activation_dropout=args.activation_dropout,
+                activation_fn=args.activation_fn,
+                layer_norm_first=args.layer_norm_first,
+                attention_type=args.attention_type,
+            ) for _ in range(args.encoder_layers)
+        ])
 
         self.layer_norm_first = args.layer_norm_first
         self.layer_norm = nn.LayerNorm(self.embedding_dim)
@@ -248,16 +266,21 @@ class TransformerEncoder(nn.Module):
         self.apply(init_bert_params)
 
     def forward(self, x, padding_mask=None, attn_mask=None, get_hidden=False):
-        x, layer_results = self.extract_features(
-            x, padding_mask, attn_mask, get_hidden=get_hidden
-        )
+        x, layer_results = self.extract_features(x,
+                                                 padding_mask,
+                                                 attn_mask,
+                                                 get_hidden=get_hidden)
 
         if self.layer_norm_first:
             x = self.layer_norm(x)
 
         return x, layer_results
 
-    def extract_features(self, x, padding_mask=None, attn_mask=None, get_hidden=False):
+    def extract_features(self,
+                         x,
+                         padding_mask=None,
+                         attn_mask=None,
+                         get_hidden=False):
 
         if padding_mask is not None:
             x[padding_mask] = 0

@@ -14,7 +14,8 @@ from upstream.distiller.model import DistillerConfig, DistillerModel
 import wandb
 
 # change according to your finetuning model
-from upstream.hubert.expert import UpstreamExpert
+# from upstream.hubert.expert import UpstreamExpert
+import upstream
 
 
 def freeze_model(model):
@@ -192,8 +193,20 @@ class DistillerForPretrain(nn.Module):
         # teacher = torch.hub.load("s3prl/s3prl", teacher_config.model) #! get the teacher model
         
         #! get the model locally
-        teacher = UpstreamExpert(teacher_config.model_path)
-        
+        if teacher_config.model.find("wav2vec2") >= 0:
+            print("[DistillerForPretrain] - use wav2vec2 as teacher model")
+            from upstream.wav2vec2.expert import UpstreamExpert
+            teacher = UpstreamExpert(teacher_config.model_path)
+        elif teacher_config.model.find("data2vec") >= 0:
+            print("[DistillerForPretrain] - use data2vec as teacher model")
+            from upstream.data2vec.expert import UpstreamExpert
+            teacher = UpstreamExpert(teacher_config.model_path)
+        else:
+            print("[DistillerForPretrain] - use hubert as teacher model")
+            from upstream.hubert.expert import UpstreamExpert
+            teacher = UpstreamExpert(teacher_config.model_path)
+        print(teacher.model)
+
         if (
             teacher_config.model.find("hubert") >= 0
             or teacher_config.model.find("wav2vec2") >= 0
