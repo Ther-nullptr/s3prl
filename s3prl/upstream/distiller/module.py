@@ -129,7 +129,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
         x: torch.Tensor,
         self_attn_mask: torch.Tensor = None,
         self_attn_padding_mask: torch.Tensor = None,
-        need_weights: bool = False,
+        need_weights: bool = True,
     ):
         if self.attention_type in ["original", "sparse"]:
             x, attn = self.self_attn(
@@ -151,7 +151,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
         x: torch.Tensor,
         self_attn_mask: torch.Tensor = None,
         self_attn_padding_mask: torch.Tensor = None,
-        need_weights: bool = False,
+        need_weights: bool = True,
         att_args=None,
     ):
         """
@@ -165,7 +165,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
             x, attn = self.forward_self_attn(
                 x,
                 self_attn_mask=self_attn_mask,
-                need_weights=False,
+                need_weights=True,
                 self_attn_padding_mask=self_attn_padding_mask,
             )
             x = self.dropout1(x)
@@ -182,7 +182,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
             x, attn = self.forward_self_attn(
                 x,
                 self_attn_mask=self_attn_mask,
-                need_weights=need_weights,
+                need_weights=True,
                 self_attn_padding_mask=self_attn_padding_mask,
             )
 
@@ -247,7 +247,7 @@ class TransformerEncoder(nn.Module):
 
         self.apply(init_bert_params)
 
-    def forward(self, x, padding_mask=None, attn_mask=None, get_hidden=False):
+    def forward(self, x, padding_mask=None, attn_mask=None, get_hidden=True):
         x, layer_results, attn_results = self.extract_features(
             x, padding_mask, attn_mask, get_hidden=get_hidden
         )
@@ -257,7 +257,7 @@ class TransformerEncoder(nn.Module):
 
         return x, layer_results, attn_results
 
-    def extract_features(self, x, padding_mask=None, attn_mask=None, get_hidden=False, get_attn=False):
+    def extract_features(self, x, padding_mask=None, attn_mask=None, get_hidden=True):
 
         if padding_mask is not None:
             x[padding_mask] = 0
@@ -278,16 +278,15 @@ class TransformerEncoder(nn.Module):
         attn_results = []
         for i, layer in enumerate(self.layers):
             dropout_probability = np.random.random()
-            if not self.training or (dropout_probability > self.layerdrop):
+            if 1:
                 x, attn = layer(
                     x,
                     self_attn_padding_mask=padding_mask,
-                    need_weights=False,
+                    need_weights=True,
                     self_attn_mask=attn_mask,
                 )
-                if get_attn:
-                    attn_results.append(attn)
                 if get_hidden:
+                    attn_results.append(attn)
                     layer_results.append(x.transpose(0, 1))
 
         # T x B x C -> B x T x C

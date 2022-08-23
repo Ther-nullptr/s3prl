@@ -139,12 +139,6 @@ class UpstreamPretrainExpert(nn.Module):
             return_other=global_step % log_step == 0,
         )
 
-        if global_step % log_step == 0:
-            for key, value in other_res.items():
-                if isinstance(value, torch.Tensor):
-                    value = float(value.mean().cpu().item())
-                records[key] = value
-
         return loss, records
 
     # interface
@@ -279,42 +273,61 @@ class DistillerForPretrain(nn.Module):
             pad_mask: FloatTensor (B x T)
             return_other: Bool (returns other information for logging)
         """
-
+        return_other = False
         # Forward model
         if self.config.get_hidden == False:
             feat, feat_final, pred, pad_mask = self.distiller(wave_input, pad_mask) #! distiller model(the small one)
         else:
             feat, feat_final, pred, pad_mask, student_hiddens, student_attns = self.distiller(wave_input, pad_mask, get_hidden=True)
+            student_hiddens = torch.stack(student_hiddens, dim=1)
+            student_attns = torch.stack(student_attns, dim=1)
         #! feat [12, 752, 512] BNxTxD   feat_final [12, 752, 768]  pred [12, 2, 752, 768] BxNxTxD
         #! feat: after conv  feat_final: after proj  pred: after transformers
+        # with torch.no_grad():
+        #     wave_orig = [wave.to(wave_input.device) for wave in wave_orig] #? what is wave_orig
+        #     with torch.cuda.amp.autocast(False): #! teacher_hiddens: len 12, with [12, 752, 768]
+        #         teacher_hiddens = self.teacher(wave_orig) #! same as wave_orig, only change to list  #! forward the teacher
+        #     if self.config.task_emb_type == "none":
+        #         teacher_hiddens = teacher_hiddens["hidden_states"][self.config.n_tasks]
+        #         teacher_hiddens = teacher_hiddens.unsqueeze(1)
+        #     else:
+        #         if self.config.task_emb_type in ["expand-last", "hnet", "self-hidden"]:
+        #             teacher_hiddens_1 = [
+        #                 teacher_hiddens["hidden_states"][i][0]
+        #                 for i in self.distiller.pred_layer_id
+        #             ]
+        #         else:
+        #             teacher_hiddens_1 = teacher_hiddens["hidden_states"][1:]
+        #         teacher_hiddens_1 = torch.stack(teacher_hiddens_1, dim=1).transpose(0,2)  # B x N x T x D #! 12->2 layers
+
+        #     teacher_hiddens_2 = [
+        #         teacher_hiddens["hidden_states"][i][0]
+        #         for i in self.distiller.pred_layer_id_2
+        #     ]
+        #     teacher_hiddens_2 = torch.stack(teacher_hiddens_2, dim=1).transpose(0,2)  # B x N x T x D #! 12->2 layers
+
+        #     teacher_attns = [
+        #         teacher_hiddens["hidden_states"][i][1]
+        #         for i in self.distiller.pred_layer_id_2
+        #     ]
+        #     teacher_attns = torch.stack(teacher_attns, dim=1)  # B x N x T x D #! 12->2 layers
+
         with torch.no_grad():
-            wave_orig = [wave.to(wave_input.device) for wave in wave_orig] #? what is wave_orig
-            with torch.cuda.amp.autocast(False): #! teacher_hiddens: len 12, with [12, 752, 768]
-                teacher_hiddens = self.teacher(wave_orig) #! same as wave_orig, only change to list  #! forward the teacher
+            wave_orig = [wave.to(wave_input.device) for wave in wave_orig]
+            with torch.cuda.amp.autocast(False):
+                teacher_hiddens = self.teacher(wave_orig)
             if self.config.task_emb_type == "none":
                 teacher_hiddens = teacher_hiddens["hidden_states"][self.config.n_tasks]
                 teacher_hiddens = teacher_hiddens.unsqueeze(1)
             else:
                 if self.config.task_emb_type in ["expand-last", "hnet", "self-hidden"]:
                     teacher_hiddens = [
-                        teacher_hiddens["hidden_states"][i][0]
+                        teacher_hiddens["hidden_states"][i]
                         for i in self.distiller.pred_layer_id
                     ]
                 else:
                     teacher_hiddens = teacher_hiddens["hidden_states"][1:]
-                teacher_hiddens = torch.stack(teacher_hiddens, dim=1)  # B x N x T x D #! 12->2 layers
-
-            teacher_hiddens_2 = [
-                teacher_hiddens["hidden_states"][i][0]
-                for i in self.distiller.pred_layer_id_2
-            ]
-            teacher_hiddens_2 = torch.stack(teacher_hiddens_2, dim=1)  # B x N x T x D #! 12->2 layers
-
-            teacher_attns = [
-                teacher_hiddens["hidden_states"][i][1]
-                for i in self.distiller.pred_layer_id_2
-            ]
-            teacher_attns = torch.stack(teacher_attns, dim=1)  # B x N x T x D #! 12->2 layers
+                teacher_hiddens = torch.stack(teacher_hiddens, dim=1)  # B x N x T x D
 
         # Compute all objectives
         if self.config.get_hidden == False:
@@ -334,39 +347,38 @@ class DistillerForPretrain(nn.Module):
             })
 
         else:
-            (
-                total_loss,
-                rec_loss,
-                rec_layer_loss,
-                feat_pen,
-                sim_loss,
-                sim_layer_loss,
-                hidden_loss, 
-                hidden_layer_loss, 
-                attn_loss, 
-                attn_layer_loss
-            ) = self.compute_loss_hidden(feat, pred, teacher_hiddens, teacher_hiddens_2, teacher_attns, student_hiddens, student_attns, return_other) #! feat [12, 752, 512]  pred [12, 2, 752, 768]  teacher_hiddens [12, 2, 752, 768]
+            pass
+            # (
+            #     total_loss,
+            #     rec_loss,
+            #     rec_layer_loss,
+            #     feat_pen,
+            #     sim_loss,
+            #     sim_layer_loss,
+            #     hidden_loss, 
+            #     hidden_layer_loss, 
+            #     attn_loss, 
+            #     attn_layer_loss
+            # ) = self.compute_loss_hidden(feat=feat,pred=pred,target=teacher_hiddens_1,teacher_hiddens=teacher_hiddens_2, teacher_attns=teacher_attns, student_hiddens=student_hiddens, student_attns=student_attns, return_other=return_other)
             
-            wandb.log({
-                "total_loss": total_loss,
-                "rec_loss": rec_loss,
-                "sim_loss": sim_loss,
-                "hidden_loss": hidden_loss,
-                "attn_loss": attn_loss
-            })
-
-            for i, item in enumerate(hidden_layer_loss):
-                wandb.log({f"hidden_layer_loss_{i}":item})
-
-            for i, item in enumerate(attn_layer_loss):
-                wandb.log({f"attn_layer_loss_{i}":item})
+            # wandb.log({
+            #     "total_loss": total_loss,
+            #     "rec_loss": rec_loss,
+            #     "sim_loss": sim_loss,
+            #     "hidden_loss": hidden_loss,
+            # })
 
         for i, item in enumerate(rec_layer_loss):
             wandb.log({f"rec_layer_loss_{i}":item})
 
         for i, item in enumerate(sim_layer_loss):
             wandb.log({f"sim_layer_loss_{i}":item})
+
+        # for i, item in enumerate(hidden_layer_loss):
+        #     wandb.log({f"hidden_layer_loss_{i}":item})
         
+        return_other = False
+
         if return_other:
             with torch.no_grad():
                 other_res = {
@@ -417,15 +429,12 @@ class DistillerForPretrain(nn.Module):
         """
         #! why feat is not same as pred in last dimension(because it is the output of conv)
         # Reconstruction loss
-        return_other = True
         assert pred.shape == target.shape, (pred.shape, target.shape)
         rec_loss = self.loss_func(pred, target)  # B x N x T x D #! L1 loss
 
-        if return_other:
-            with torch.no_grad():
-                rec_layer_loss = rec_loss.mean((0, 2, 3))
-        else:
-            rec_layer_loss = None
+        with torch.no_grad():
+            rec_layer_loss = rec_loss.mean((0, 2, 3))
+        rec_layer_loss = None
 
         rec_loss = rec_loss.mean()
 
@@ -433,11 +442,8 @@ class DistillerForPretrain(nn.Module):
         if self.cosine_loss > 0:
             sim_loss = -F.logsigmoid(F.cosine_similarity(pred, target, dim=-1)) #! what is the dimension of every val? # sim_loss [12, 2, 752]
             # B x N x T
-            if return_other:
-                with torch.no_grad():
-                    sim_layer_loss = sim_loss.mean((0, 2))
-            else:
-                sim_layer_loss = None
+            with torch.no_grad():
+                sim_layer_loss = sim_loss.mean((0, 2))
             sim_loss = sim_loss.mean()
         else:
             sim_loss = 0
@@ -461,18 +467,15 @@ class DistillerForPretrain(nn.Module):
             feat: B x T x D
             pred: B x N x T x D
             target: B x N x T x D
-            student_hidden: L, B x T x D
-            student_attn: L,
+            student_hidden: B x N x T x D
+            student_attn: B x N x T x D
         """
         # Reconstruction loss
         assert pred.shape == target.shape, (pred.shape, target.shape)
         rec_loss = self.loss_func(pred, target)  # B x N x T x D #! L1 loss
 
-        if return_other:
-            with torch.no_grad():
-                rec_layer_loss = rec_loss.mean((0, 2, 3))
-        else:
-            rec_layer_loss = None
+        with torch.no_grad():
+            rec_layer_loss = rec_loss.mean((0, 2, 3))
 
         rec_loss = rec_loss.mean()
 
@@ -480,37 +483,33 @@ class DistillerForPretrain(nn.Module):
         if self.cosine_loss > 0:
             sim_loss = -F.logsigmoid(F.cosine_similarity(pred, target, dim=-1)) #! what is the dimension of every val? # sim_loss [12, 2, 752]
             # B x N x T
-            if return_other:
-                with torch.no_grad():
-                    sim_layer_loss = sim_loss.mean((0, 2))
-            else:
-                sim_layer_loss = None
+            with torch.no_grad():
+                sim_layer_loss = sim_loss.mean((0, 2))
             sim_loss = sim_loss.mean()
         else:
             sim_loss = 0
             sim_layer_loss = None
 
         # hidden loss
-        assert teacher_hiddens.shape == student_hiddens.shape
+        assert teacher_hiddens.shape == student_hiddens.shape, (teacher_hiddens.shape, student_hiddens.shape)
         hidden_loss = self.loss_func(teacher_hiddens, student_hiddens)  # B x N x T x D #! L1 loss
 
-        if return_other:
-            with torch.no_grad():
-                hidden_layer_loss = hidden_loss.mean((0, 2, 3))
-        else:
-            hidden_layer_loss = None
+        with torch.no_grad():
+            hidden_layer_loss = hidden_loss.mean((0, 2, 3))
         hidden_loss = hidden_loss.mean()
 
         # attn loss
-        assert teacher_attns.shape == student_attns.shape
-        attn_loss = self.loss_func(teacher_attns, student_attns)  # B x N x T x D #! L1 loss
+        attn_loss = None
+        attn_layer_loss = None
+        # assert teacher_attns.shape == student_attns.shape, (teacher_attns.shape, student_attns.shape)
+        # attn_loss = self.loss_func(teacher_attns, student_attns)  # B x N x T x D #! L1 loss
 
-        if return_other:
-            with torch.no_grad():
-                attn_layer_loss = attn_loss.mean((0, 2, 3))
-        else:
-            attn_layer_loss = None
-        attn_loss = attn_loss.mean()
+        # if return_other:
+        #     with torch.no_grad():
+        #         attn_layer_loss = attn_loss.mean((0, 2, 3))
+        # else:
+        #     attn_layer_loss = None
+        # attn_loss = attn_loss.mean()
 
         # Feature loss
         feat_pen = feat.float().pow(2).mean() #? what is feature loss? (maybe it is not important)
@@ -522,7 +521,6 @@ class DistillerForPretrain(nn.Module):
             + feat_pen * self.config.feat_pen_loss
             + sim_loss * self.cosine_loss
             + hidden_loss * self.hidden_loss
-            + attn_loss * self.attn_loss
         )
 
         return total_loss, rec_loss, rec_layer_loss, feat_pen, sim_loss, sim_layer_loss, hidden_loss, hidden_layer_loss, attn_loss, attn_layer_loss

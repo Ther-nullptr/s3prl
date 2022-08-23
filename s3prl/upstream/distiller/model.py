@@ -79,6 +79,9 @@ class DistillerConfig:
         self.init_teacher_encoder_layers = bool(
             config.get("init_teacher_encoder_layers", False)
         )
+        self.get_hidden = bool(
+            config.get("get_hidden", False)
+        )
 
 
 class DistillerModel(nn.Module):
@@ -118,14 +121,15 @@ class DistillerModel(nn.Module):
             final_emb_size += config.task_emb_size
         elif self.task_emb_type == "expand-last":
             self.pred_layer_id = config.pred_layer_id
+            self.pred_layer_id_2 = config.pred_layer_id_2
             assert self.n_tasks == len(self.pred_layer_id)
             print(
                 f"[DistillerModel] - Expands the output dimension by {self.n_tasks} times"
             )
             print(f"[DistillerModel] - Pred layers: {self.pred_layer_id}")
+            print(f"[DistillerModel] - Pred hidden layers: {self.pred_layer_id_2}")
         elif self.task_emb_type == "self-hidden":
             self.pred_layer_id = config.pred_layer_id
-            self.pred_layer_id_2 = config.pred_layer_id_2
             assert self.n_tasks == len(self.pred_layer_id)
             assert self.n_tasks == config.encoder_layers + 1
             print("[DistillerModel] - Predicting with self-hidden layers")
@@ -247,7 +251,7 @@ class DistillerModel(nn.Module):
                 True if (self.task_emb_type == "self-hidden") else get_hidden
             )
             hidden, layer_hiddens, attn_hiddens = self.encoder( #! encoder layer(only 2 layers)
-                feat_final, ~pad_mask.bool(), get_hidden=get_hidden_tmp
+                feat_final, ~pad_mask.bool(), get_hidden=True
             ) #! hidden [12,752,768]
         else:
             hidden = self.encoder(feat_final)
