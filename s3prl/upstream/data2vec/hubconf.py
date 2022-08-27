@@ -47,6 +47,6 @@ def data2vec_large_ll60k(refresh=False, *args, **kwargs):
 
 
 def data2vec_base_local(*args, **kwargs):
-    ckpt="/mnt/lustre/sjtu/home/xc915/superb/upstream_model/audio_base_ls.pt"
+    ckpt="/mnt/lustre/sjtu/home/xc915/superb/upstream_model/fairseq-to-s3prl/audio_base_ls.pt"
     print("Use data2vec_base_local model")
     return data2vec_local(ckpt=ckpt)

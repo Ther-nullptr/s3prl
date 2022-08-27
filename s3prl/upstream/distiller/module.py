@@ -6,13 +6,51 @@
 import math
 import numpy as np
 import torch
-from torch import nn
+import torch.nn as nn
 import torch.nn.functional as F
 
-from fairseq import utils
-from fairseq.modules import MultiheadAttention, SamePad, DynamicConv
-from fairseq.modules.sparse_multihead_attention import SparseMultiheadAttention
-from fairseq.modules.transformer_sentence_encoder import init_bert_params
+from ..wav2vec2.wav2vec2_model import (
+    MultiheadAttention,
+    SamePad,
+    get_activation_fn,
+    ConvFeatureExtractionModel,
+    GradMultiply,
+    LayerNorm,
+    TransposeLast
+)
+
+
+def init_bert_params(module):
+    """
+    Initialize the weights specific to the BERT Model.
+    This overrides the default initializations depending on the specified arguments.
+        1. If normal_init_linear_weights is set then weights of linear
+           layer will be initialized using the normal distribution and
+           bais will be set to the specified value.
+        2. If normal_init_embed_weights is set then weights of embedding
+           layer will be initialized using the normal distribution.
+        3. If normal_init_proj_weights is set then weights of
+           in_project_weight for MultiHeadAttention initialized using
+           the normal distribution (to be validated).
+    """
+
+    def normal_(data):
+        # with FSDP, module params will be on CUDA, so we cast them back to CPU
+        # so that the RNG is consistent with and without FSDP
+        data.copy_(data.cpu().normal_(mean=0.0, std=0.02).to(data.device))
+
+    if isinstance(module, nn.Linear):
+        normal_(module.weight.data)
+        if module.bias is not None:
+            module.bias.data.zero_()
+    if isinstance(module, nn.Embedding):
+        normal_(module.weight.data)
+        if module.padding_idx is not None:
+            module.weight.data[module.padding_idx].zero_()
+    if isinstance(module, MultiheadAttention):
+        normal_(module.q_proj.weight.data)
+        normal_(module.k_proj.weight.data)
+        normal_(module.v_proj.weight.data)
 
 
 class SplitLinear(nn.Module):
@@ -79,7 +117,7 @@ class TransformerSentenceEncoderLayer(nn.Module):
         self.activation_dropout = activation_dropout
 
         # Initialize blocks
-        self.activation_fn = utils.get_activation_fn(activation_fn)
+        self.activation_fn = get_activation_fn(activation_fn)
         self.attention_type = attention_type
         if attention_type == "original":
             self.self_attn = MultiheadAttention(
@@ -89,6 +127,10 @@ class TransformerSentenceEncoderLayer(nn.Module):
                 self_attention=True,
             )
         elif attention_type == "sparse":
+            from fairseq.modules.sparse_multihead_attention import (
+                SparseMultiheadAttention,
+            )
+
             self.self_attn = SparseMultiheadAttention(
                 self.embedding_dim,
                 num_attention_heads,
@@ -98,6 +140,8 @@ class TransformerSentenceEncoderLayer(nn.Module):
                 expressivity=16,
             )
         elif attention_type == "dynamic":
+            from fairseq.modules import DynamicConv
+
             self.self_attn = DynamicConv(
                 self.embedding_dim,
                 kernel_size=31,
@@ -220,8 +264,24 @@ class TransformerEncoder(nn.Module):
         nn.init.normal_(self.pos_conv.weight, mean=0, std=std)
         nn.init.constant_(self.pos_conv.bias, 0)
 
-        self.pos_conv = nn.utils.weight_norm(self.pos_conv, name="weight", dim=2)
-        self.pos_conv = nn.Sequential(self.pos_conv, SamePad(args.conv_pos), nn.GELU())
+        if args.extractor_mode == 'default':
+            self.pos_conv = nn.utils.weight_norm(self.pos_conv, name="weight", dim=2)
+            self.pos_conv = nn.Sequential(self.pos_conv, SamePad(args.conv_pos), nn.GELU())
+
+        else:
+            self.pos_conv = nn.utils.weight_norm(self.pos_conv, name="weight", dim=2)
+            self.pos_conv = nn.Sequential(
+                    *[nn.Sequential(
+                        self.pos_conv, 
+                        SamePad(args.conv_pos), 
+                        nn.GELU(),
+                        nn.Sequential(
+                                TransposeLast(),
+                                LayerNorm(self.embedding_dim, elementwise_affine=False),
+                                TransposeLast()
+                            )
+                        ) for i in range (5)] 
+                    )
 
         print(f"[TransformerEncoder] - Attention type = {args.attention_type}")
         self.layers = nn.ModuleList(
@@ -264,7 +324,7 @@ class TransformerEncoder(nn.Module):
 
         x_conv = self.pos_conv(x.transpose(1, 2))
         x_conv = x_conv.transpose(1, 2)
-        x += x_conv
+        x = x + x_conv
 
         if not self.layer_norm_first:
             x = self.layer_norm(x)

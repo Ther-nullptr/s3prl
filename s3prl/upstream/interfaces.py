@@ -7,8 +7,9 @@ import torch.nn as nn
 from torch import Tensor
 import torch.nn.functional as F
 import sys
-sys.path.append("..")
-from utility.helper import show
+
+def show(*args, **kwargs):
+    print(*args, **kwargs)
 
 SAMPLE_RATE = 16000
 TOLERABLE_SEQLEN_DIFF = 5

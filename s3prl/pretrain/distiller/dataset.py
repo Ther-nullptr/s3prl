@@ -8,6 +8,7 @@ import random
 import numpy as np
 import torch
 from torch.nn.utils.rnn import pad_sequence
+import torch.nn.functional as F
 import torchaudio
 from pretrain.bucket_dataset import WaveDataset
 
@@ -40,7 +41,8 @@ class OnlineWaveDataset(WaveDataset):
     def _load_feat(self, feat_path):
         if self.libri_root is None:
             return torch.FloatTensor(np.load(os.path.join(self.root, feat_path)))
-        wav, _ = torchaudio.load(os.path.join(self.libri_root, feat_path))
+        wav, _ = torchaudio.load(os.path.join(self.libri_root, feat_path), normalize=True)
+        wav = F.layer_norm(wav, wav.shape)
         return wav.squeeze()  # (seq_len)
 
     def __getitem__(self, index):

@@ -3,13 +3,15 @@
     Author: Heng-Jui Chang (https://github.com/vectominist)
 """
 
-import math
-import numpy as np
 import torch
 from torch import nn
-from fairseq.models.wav2vec.wav2vec2 import ConvFeatureExtractionModel
-from fairseq.modules import GradMultiply
-from .module import TransformerEncoder, SplitLinear
+
+from .module import (
+    SplitLinear,
+    TransformerEncoder,
+    ConvFeatureExtractionModel,
+    GradMultiply,
+)
 
 
 class DistillerConfig:
@@ -198,8 +200,6 @@ class DistillerModel(nn.Module):
             task_id (LongTensor): N >= 1
         """
 
-        get_hidden = True
-
         feat, pad_mask = self.forward_feature(wave, pad_mask) #! only feature extractor
 
         if self.task_emb_type not in ["none", "expand-last", "self-hidden"]:
@@ -283,7 +283,7 @@ class DistillerModel(nn.Module):
         """Calculates pad mask after conv."""
         pad_len = (pad_mask > 0).sum(1).long()
         for _, k_size, s_size in self.conv_layers:
-            pad_len = (pad_len - k_size) // s_size + 1
+            pad_len = torch.div((pad_len - k_size), s_size, rounding_mode="trunc") + 1
 
         new_pad_mask = torch.ones(
             (pad_mask.shape[0], max_len), dtype=pad_mask.dtype, device=pad_mask.device
