@@ -13,6 +13,10 @@ from pretrain.distiller.dataset import OnlineWaveDataset
 from upstream.distiller.model import DistillerConfig, DistillerModel
 import wandb
 
+# change according to your finetuning model
+# from upstream.hubert.expert import UpstreamExpert
+import upstream
+
 
 def freeze_model(model):
     """Freeze all parameters in a model."""
