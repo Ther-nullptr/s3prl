@@ -4,7 +4,6 @@ from typing import List
 from pathlib import Path
 
 import s3prl
-from s3prl.util.download import _urls_to_filepaths
 from s3prl.upstream.utils import merge_with_parent, load_fairseq_ckpt
 
 from s3prl.upstream.hubert.hubert_model import (

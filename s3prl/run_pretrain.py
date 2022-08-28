@@ -134,6 +134,7 @@ def get_pretrain_args():
             u for u in os.listdir('pretrain/')
             if re.search(f'^{u}_|^{u}$', args.upstream)
         ]
+        print(upstream_dirs)
         assert len(upstream_dirs) == 1
 
         if args.config is None:

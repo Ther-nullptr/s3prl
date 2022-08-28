@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from pretrain.distiller_finetune.dataset import OnlineWaveDataset
+from pretrain.distillfinetuner.dataset import OnlineWaveDataset
 from upstream.distiller_finetune.model import DistillerConfig, DistillerModel
 import wandb
 
@@ -187,6 +187,7 @@ class LinearProj(nn.Module):
     #! now the size of linear projection is fixed: (768, 32)
 
     def __init__(self):
+        super().__init__()
         self.linear = nn.Linear(768, 32)
 
     def forward(self, x):
@@ -280,7 +281,7 @@ class DistillerForPretrain(nn.Module):
             print("[DistillerForPretrain] - Enabled attn loss.")
         
         self.kldiv_loss = config.kldiv_loss  #! 1.0
-        if self.attn_loss > 0:
+        if self.kldiv_loss > 0:
             print("[DistillerForPretrain] - Enabled kldiv loss.")
 
         self.temperature = config.temperature
@@ -333,6 +334,7 @@ class DistillerForPretrain(nn.Module):
             wave_orig = [wave.to(wave_input.device) for wave in wave_orig]
             with torch.cuda.amp.autocast(False):
                 teacher_hiddens = self.teacher(wave_orig)
+                x = teacher_hiddens["hidden_states"][-1].transpose(0, 1)  # B x T x C -> T x B x C
             if self.config.task_emb_type == "none":
                 teacher_hiddens = teacher_hiddens["hidden_states"][
                     self.config.n_tasks]
@@ -349,9 +351,7 @@ class DistillerForPretrain(nn.Module):
                     teacher_hiddens = teacher_hiddens["hidden_states"][1:]
                 teacher_hiddens = torch.stack(teacher_hiddens,
                                               dim=1)  # B x N x T x D
-
-            x = teacher_hiddens["x"]  # B x T x C
-            x = x.transpose(0, 1)  # T x B x C
+                                              
             teacher_logits = self.linear_projection(x)  # T x B x kinds
 
         (
