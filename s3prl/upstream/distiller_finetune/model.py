@@ -64,6 +64,7 @@ class DistillerConfig:
         self.feat_pen_loss = float(config.get("feat_pen_loss", 0.0))
         self.cosine_loss = float(config.get("cosine_loss", 0.0))
         self.kldiv_loss = float(config.get("kldiv_loss", 0.0))
+        self.kldiv_loss_2 = float(config.get("kldiv_loss_2", 0.0))
         self.temperature = float(config.get("temperature", 0.0))
         self.hidden_loss = float(config.get("hidden_loss", 0.0))
         self.attn_loss = float(config.get("attn_loss", 0.0))
