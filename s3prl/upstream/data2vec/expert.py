@@ -16,22 +16,22 @@ class UpstreamExpert(UpstreamBase):
         self.model.feature_grad_mult = 0.0
         self.model.encoder.layerdrop = 0.0
 
-        if len(self.hooks) == 0:
-            module_name = "self.model.encoder.layers"
-            for module_id in range(len(eval(module_name))):
-                self.add_hook(
-                    f"{module_name}[{module_id}]",
-                    lambda input, output: input[0].transpose(0, 1),
-                )
-            self.add_hook("self.model.encoder", lambda input, output: output[0])
+        # if len(self.hooks) == 0:
+        #     module_name = "self.model.encoder.layers"
+        #     for module_id in range(len(eval(module_name))):
+        #         self.add_hook(
+        #             f"{module_name}[{module_id}]",
+        #             lambda input, output: input[0].transpose(0, 1),
+        #         )
+        #     self.add_hook("self.model.encoder", lambda input, output: output[0])
 
-            def postprocess(xs):
-                names, hiddens = zip(*xs)
-                unpad_len = min([hidden.size(1) for hidden in hiddens])
-                hiddens = [hidden[:, :unpad_len, :] for hidden in hiddens]
-                return list(zip(names, hiddens))
+        #     def postprocess(xs):
+        #         names, hiddens = zip(*xs)
+        #         unpad_len = min([hidden.size(1) for hidden in hiddens])
+        #         hiddens = [hidden[:, :unpad_len, :] for hidden in hiddens]
+        #         return list(zip(names, hiddens))
 
-            self.hook_postprocess = postprocess
+        #     self.hook_postprocess = postprocess
 
     def get_downsample_rates(self, key: str) -> int:
         return 320
@@ -49,6 +49,8 @@ class UpstreamExpert(UpstreamBase):
         padded_wav = pad_sequence(wavs, batch_first=True)
 
         results = self.model.extract_features(padded_wav, wav_padding_mask)
+
+        return results
 
         # This forward function only does the model forward
         # The return dict is then handled by UpstreamBase's hooks

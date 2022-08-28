@@ -3,13 +3,15 @@
     Author: Heng-Jui Chang (https://github.com/vectominist)
 """
 
-import math
-import numpy as np
 import torch
 from torch import nn
-from fairseq.models.wav2vec.wav2vec2 import ConvFeatureExtractionModel
-from fairseq.modules import GradMultiply
-from .module import TransformerEncoder, SplitLinear
+
+from .module import (
+    SplitLinear,
+    TransformerEncoder,
+    ConvFeatureExtractionModel,
+    GradMultiply,
+)
 
 
 class DistillerConfig:
@@ -61,10 +63,17 @@ class DistillerConfig:
         self.loss_type = str(config.get("loss_type", "l1"))
         self.feat_pen_loss = float(config.get("feat_pen_loss", 0.0))
         self.cosine_loss = float(config.get("cosine_loss", 0.0))
+        self.kldiv_loss = float(config.get("kldiv_loss", 0.0))
+        self.temperature = float(config.get("temperature", 0.0))
+        self.hidden_loss = float(config.get("hidden_loss", 0.0))
+        self.attn_loss = float(config.get("attn_loss", 0.0))
 
         # When task_emb_type == 'expand-last' only
         self.pred_layer_id = list(
             config.get("pred_layer_id", range(1, self.n_tasks + 1))
+        )
+        self.pred_layer_id_2 = list(
+            config.get("pred_layer_id_2", range(1, self.n_tasks + 1))
         )
 
         # Initialization
@@ -73,6 +82,9 @@ class DistillerConfig:
         )
         self.init_teacher_encoder_layers = bool(
             config.get("init_teacher_encoder_layers", False)
+        )
+        self.get_hidden = bool(
+            config.get("get_hidden", False)
         )
 
 
@@ -113,11 +125,13 @@ class DistillerModel(nn.Module):
             final_emb_size += config.task_emb_size
         elif self.task_emb_type == "expand-last":
             self.pred_layer_id = config.pred_layer_id
+            self.pred_layer_id_2 = config.pred_layer_id_2
             assert self.n_tasks == len(self.pred_layer_id)
             print(
                 f"[DistillerModel] - Expands the output dimension by {self.n_tasks} times"
             )
             print(f"[DistillerModel] - Pred layers: {self.pred_layer_id}")
+            print(f"[DistillerModel] - Pred hidden layers: {self.pred_layer_id_2}")
         elif self.task_emb_type == "self-hidden":
             self.pred_layer_id = config.pred_layer_id
             assert self.n_tasks == len(self.pred_layer_id)
@@ -141,6 +155,8 @@ class DistillerModel(nn.Module):
             self.encoder = TransformerEncoder(config)
         else:
             self.encoder = nn.GELU()
+
+        self.linear_projection = nn.Linear(config.encoder_embed_dim, 32)
 
         final_dim = config.final_dim * (
             1 if self.task_emb_type != "expand-last" else self.n_tasks
@@ -238,8 +254,8 @@ class DistillerModel(nn.Module):
             get_hidden_tmp = (
                 True if (self.task_emb_type == "self-hidden") else get_hidden
             )
-            hidden, layer_hiddens = self.encoder( #! encoder layer(only 2 layers)
-                feat_final, ~pad_mask.bool(), get_hidden=get_hidden_tmp
+            hidden, layer_hiddens, attn_hiddens = self.encoder( #! encoder layer(only 2 layers)
+                feat_final, ~pad_mask.bool(), get_hidden=True
             ) #! hidden [12,752,768]
         else:
             hidden = self.encoder(feat_final)
@@ -262,16 +278,19 @@ class DistillerModel(nn.Module):
             )
             # B x N x T x D
 
+        hidden_transpose = hidden.transpose(0, 1) # B x T x C -> T x B x C
+        student_logits = self.linear_projection(hidden_transpose) # T x B x kinds
+
         if get_hidden:
-            return feat, feat_final, pred, pad_mask, layer_hiddens
+            return feat, feat_final, pred, pad_mask, student_logits, layer_hiddens
         else:
-            return feat, feat_final, pred, pad_mask
+            return feat, feat_final, pred, pad_mask, student_logits
 
     def cal_pad_mask(self, pad_mask, max_len):
         """Calculates pad mask after conv."""
         pad_len = (pad_mask > 0).sum(1).long()
         for _, k_size, s_size in self.conv_layers:
-            pad_len = (pad_len - k_size) // s_size + 1
+            pad_len = torch.div((pad_len - k_size), s_size, rounding_mode="trunc") + 1
 
         new_pad_mask = torch.ones(
             (pad_mask.shape[0], max_len), dtype=pad_mask.dtype, device=pad_mask.device

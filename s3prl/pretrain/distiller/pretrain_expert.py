@@ -310,7 +310,6 @@ class DistillerForPretrain(nn.Module):
                     teacher_hiddens = teacher_hiddens["hidden_states"][1:]
                 teacher_hiddens = torch.stack(teacher_hiddens, dim=1)  # B x N x T x D
 
-
         (
             total_loss,
             rec_loss,

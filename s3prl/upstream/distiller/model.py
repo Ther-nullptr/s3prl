@@ -274,10 +274,7 @@ class DistillerModel(nn.Module):
             )
             # B x N x T x D
 
-        if get_hidden:
-            return feat, feat_final, pred, pad_mask, layer_hiddens, attn_hiddens
-        else:
-            return feat, feat_final, pred, pad_mask
+        return feat, feat_final, pred, pad_mask
 
     def cal_pad_mask(self, pad_mask, max_len):
         """Calculates pad mask after conv."""
