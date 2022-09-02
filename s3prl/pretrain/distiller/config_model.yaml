@@ -47,7 +47,7 @@ distiller:
 
 teacher:
   model: data2vec
-  model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/fairseq-to-s3prl/audio_base_ls.pt
+  model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/fairseq-to-s3prl/data2vec_finetune_to_pretrain.pt
   n_layers: 12
 
 task:
