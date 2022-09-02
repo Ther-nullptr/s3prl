@@ -243,7 +243,7 @@ class DistillerForPretrain(nn.Module):
             linear_projection_2 = LinearProj()
             linear_projection_2.load_state_dict(
                 torch.load(teacher_config.linear_projection_path_2))
-        elif teacher_config.model.find("data2vec") >= 0:
+        elif teacher_config.model2.find("data2vec") >= 0:
             print("[DistillerForPretrain] - use data2vec as teacher model 2")
             from upstream.data2vec.expert import UpstreamExpert
             teacher_2 = UpstreamExpert(teacher_config.model_path_2)
@@ -267,6 +267,14 @@ class DistillerForPretrain(nn.Module):
             teacher.model.encoder.layerdrop = 0
             print(
                 "[DistillerForPretrain] - Disabled teacher's encoder layerdrop"
+            )
+        
+        if (teacher_config.model2.find("hubert") >= 0
+                or teacher_config.model2.find("wav2vec2") >= 0
+                or teacher_config.model2.find("data2vec") >= 0):
+            teacher_2.model.encoder.layerdrop = 0
+            print(
+                "[DistillerForPretrain] - Disabled teacher2's encoder layerdrop"
             )
 
         # if(teacher_config.model.find("data2vec") >= 0):
@@ -312,7 +320,7 @@ class DistillerForPretrain(nn.Module):
         if self.kldiv_loss > 0:
             print("[DistillerForPretrain] - Enabled kldiv loss.")
         
-        self.kldiv_loss_2 = config.kldiv_loss  #! 1.0
+        self.kldiv_loss_2 = config.kldiv_loss_2  #! 1.0
         if self.kldiv_loss_2 > 0:
             print("[DistillerForPretrain] - Enabled kldiv loss 2.")
 
@@ -363,10 +371,12 @@ class DistillerForPretrain(nn.Module):
         #! feat: after conv  feat_final: after proj  pred: after transformers
 
         with torch.no_grad():
+            #! if use data2vec, use normalize
             wave_orig = [wave.to(wave_input.device) for wave in wave_orig]
+            wave_orig_2 = [F.layer_norm(wave.to(wave_input.device), wave.shape) for wave in wave_orig]
             with torch.cuda.amp.autocast(False):
                 teacher_hiddens = self.teacher(wave_orig)
-                teacher_hiddens_2 = self.teacher_2(wave_orig)
+                teacher_hiddens_2 = self.teacher_2(wave_orig_2)
                 x = teacher_hiddens["hidden_states"][-1].transpose(0, 1)  # B x T x C -> T x B x C
                 x_2 = teacher_hiddens_2["hidden_states"][-1].transpose(0, 1)  # B x T x C -> T x B x C
             if self.config.task_emb_type == "none":
@@ -387,7 +397,7 @@ class DistillerForPretrain(nn.Module):
                                               dim=1)  # B x N x T x D
 
             teacher_logits = self.linear_projection(x)  # T x B x kinds
-            teacher_logits_2 = self.linear_projection_2(x) # T x B x kinds
+            teacher_logits_2 = self.linear_projection_2(x_2) # T x B x kinds
 
         (
             total_loss,

@@ -62,6 +62,7 @@ class DistillerConfig:
         self.layer_emb_size = int(config.get("layer_emb_size", 0))
         self.loss_type = str(config.get("loss_type", "l1"))
         self.feat_pen_loss = float(config.get("feat_pen_loss", 0.0))
+        self.rec_loss = float(config.get("rec_loss", 0.0))
         self.cosine_loss = float(config.get("cosine_loss", 0.0))
         self.kldiv_loss = float(config.get("kldiv_loss", 0.0))
         self.kldiv_loss_2 = float(config.get("kldiv_loss_2", 0.0))

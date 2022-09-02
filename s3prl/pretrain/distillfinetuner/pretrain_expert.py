@@ -267,6 +267,10 @@ class DistillerForPretrain(nn.Module):
             self.loss_func = nn.MSELoss(reduction="none")
         else:
             raise NotImplementedError(config.loss_type)
+        
+        self.rec_loss = config.rec_loss  #! 1.0
+        if self.rec_loss > 0:
+            print("[DistillerForPretrain] - Enabled rec similarity loss.")
 
         self.cosine_loss = config.cosine_loss  #! 1.0
         if self.cosine_loss > 0:
@@ -374,11 +378,11 @@ class DistillerForPretrain(nn.Module):
             "kldiv_loss": kldiv_loss
         })
 
-        for i, item in enumerate(rec_layer_loss):
-            wandb.log({f"rec_layer_loss_{i}": item})
+        # for i, item in enumerate(rec_layer_loss):
+        #     wandb.log({f"rec_layer_loss_{i}": item})
 
-        for i, item in enumerate(sim_layer_loss):
-            wandb.log({f"sim_layer_loss_{i}": item})
+        # for i, item in enumerate(sim_layer_loss):
+        #     wandb.log({f"sim_layer_loss_{i}": item})
 
         return_other = False
 
@@ -481,7 +485,7 @@ class DistillerForPretrain(nn.Module):
                               log_target=True,
                               reduction='batchmean') * self.temperature**2
 
-        total_loss = (rec_loss + feat_pen * self.config.feat_pen_loss +
+        total_loss = (self.rec_loss * rec_loss + feat_pen * self.config.feat_pen_loss +
                       sim_loss * self.cosine_loss +
                       kldiv_loss * self.kldiv_loss)
 
