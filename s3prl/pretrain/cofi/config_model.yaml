@@ -1,6 +1,6 @@
 distiller:
   # Extractor
-  extractor_mode: layer_norm # default(hubert) or layer_norm(data2vec)
+  extractor_mode: default
   extractor_conv_feature_layers: '[(512,10,5)] + [(512,3,2)] * 4 + [(512,2,2)] * 2'
   extractor_dropout: 0.0
   feature_grad_mult: 0.1
@@ -34,20 +34,15 @@ distiller:
   loss_type: l1
   feat_pen_loss: 0.0
   cosine_loss: 1.0  # cosine similarity loss
-  hidden_loss: 0.0  # hidden loss
-  attn_loss: 0.0 # attn loss
-  embedding_loss: 1.0 # attn loss
-  pred_layer_id: [4,8,12] # layers for predict head loss
-  pred_layer_id_2: [4,8] # layers for hidden & attn loss
+  pred_layer_id: [4,8,12]
 
   # Initialization
   init_teacher_conv_layers: true
   init_teacher_encoder_layers: true
-  get_hidden: false
 
 teacher:
   model: hubert
-  model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/fairseq-to-s3prl/hubert_base.ls960.pt
+  model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/hubert_base.ls960.pt 
   n_layers: 12
 
 task:
