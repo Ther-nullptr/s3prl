@@ -13,12 +13,14 @@ from pretrain.distillfinetuner.dataset import OnlineWaveDataset
 from upstream.distiller_finetune.model import DistillerConfig, DistillerModel
 import math
 import wandb
+import logging
 import editdistance
 from argparse import Namespace
 
 from fairseq.data.dictionary import Dictionary
 from .w2l_decoder import W2lKenLMDecoder
 
+logger = logging.getLogger(__name__)
 
 def freeze_model(model):
     """Freeze all parameters in a model."""
@@ -39,6 +41,7 @@ def build_decoder(dictionary_path):
     dec_args.word_score = -1.0
     dec_args.unk_weight = -math.inf
     dec_args.sil_weight = 0
+
     return W2lKenLMDecoder(dec_args, dictionary)
 
 class UpstreamPretrainExpert(nn.Module):
@@ -284,7 +287,7 @@ class DistillerForPretrain(nn.Module):
             self.loss_func = nn.MSELoss(reduction="none")
         else:
             raise NotImplementedError(config.loss_type)
-        
+
         self.rec_loss = config.rec_loss  #! 1.0
         if self.rec_loss > 0:
             print("[DistillerForPretrain] - Enabled rec similarity loss.")
@@ -300,7 +303,7 @@ class DistillerForPretrain(nn.Module):
         self.attn_loss = config.attn_loss  #! 1.0
         if self.attn_loss > 0:
             print("[DistillerForPretrain] - Enabled attn loss.")
-        
+
         self.kldiv_loss = config.kldiv_loss  #! 1.0
         if self.kldiv_loss > 0:
             print("[DistillerForPretrain] - Enabled kldiv loss.")
@@ -379,7 +382,7 @@ class DistillerForPretrain(nn.Module):
                     teacher_hiddens = teacher_hiddens["hidden_states"][1:]
                 teacher_hiddens = torch.stack(teacher_hiddens,
                                               dim=1)  # B x N x T x D
-                                              
+
             teacher_logits = self.linear_projection(x)  # T x B x kinds
 
             # TODO valid and decode
@@ -501,16 +504,15 @@ class DistillerForPretrain(nn.Module):
         student_prob_log = F.log_softmax(student_logits, dim=-1)
 
         # valid
-        
         if(self.steps % 200 == 0 and self.enable_decode):
             w_errs = 0
             w_len = 0
-            print(f"[Valid] - begin to valid -- step {self.steps}")
+            logger.info(f"[Valid] - begin to valid -- step {self.steps}")
             with torch.no_grad():
                 teacher_prob_log_t = teacher_prob_log.transpose(0, 1).float().contiguous().cpu().unsqueeze(0) # B x T x kinds
                 student_prob_log_t = student_prob_log.transpose(0, 1).float().contiguous().cpu().unsqueeze(0) # B x T x kinds
 
-                for (teacher_lp, student_lp) in zip(teacher_prob_log_t, student_prob_log_t):
+                for (teacher_lp, student_lp) in zip(teacher_prob_log_t[0:3], student_prob_log_t[0:3]):
                     teacher_decoded = None
                     teacher_decoded = self.decoder.decode(teacher_lp)
                     if len(teacher_decoded) < 1:
@@ -536,12 +538,14 @@ class DistillerForPretrain(nn.Module):
                     if(teacher_decoded is not None and student_decoded is not None and "words" in teacher_decoded and "words" in student_decoded):
                         teacher_words = teacher_decoded["words"]
                         student_words = student_decoded["words"]
-                        print(f'teacher words: {teacher_words}')
-                        print(f'student words: {student_words}')
+                        teacher_str = ' '
+                        student_str = ' '
+                        logger.info(f'teacher words: {teacher_str.join(teacher_words)}')
+                        logger.info(f'student words: {student_str.join(student_words)}')
                         w_errs += editdistance.eval(teacher_words, student_words)
                         w_len += len(teacher_words)
-                
-                print(f'wer: {w_errs/w_len}')
+
+                logger.info(f'wer: {w_errs/w_len}')
                 wandb.log({'wer': w_errs/w_len})
 
         self.steps += 1

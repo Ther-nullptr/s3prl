@@ -173,7 +173,7 @@ def main():
 
     logging.basicConfig(
         level=logging.INFO,
-        filename="debug.log",
+        filename=f"result/pretrain/{args.expname}.log",
         filemode="w",
         format=
         "%(asctime)s - %(name)s - %(levelname)-9s - %(filename)-8s : %(lineno)s line - %(message)s",
