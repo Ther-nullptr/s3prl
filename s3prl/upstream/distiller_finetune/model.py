@@ -89,6 +89,14 @@ class DistillerConfig:
             config.get("get_hidden", False)
         )
 
+        # decode
+        self.enable_decode = bool(
+            config.get("enable_decode", False)
+        )
+        self.dictionary_path = str(
+            config.get("dictionary_path", 'dict.ltr.txt')
+        )
+
 
 class DistillerModel(nn.Module):
     """
