@@ -17,7 +17,7 @@ import editdistance
 from argparse import Namespace
 
 from fairseq.data.dictionary import Dictionary
-from fairseq.examples.speech_recognition.w2l_decoder import W2lKenLMDecoder
+from .w2l_decoder import W2lKenLMDecoder
 
 
 def freeze_model(model):
@@ -30,8 +30,8 @@ def build_decoder(dictionary_path):
     dec_args = Namespace()
     dec_args.nbest = 1
     dec_args.criterion = "ctc"
-    dec_args.kenlm_model = None
-    dec_args.lexicon = None
+    dec_args.kenlm_model = '/mnt/lustre/sjtu/home/xc915/superb/nlp_utils/arpa/4-gram.mmap'
+    dec_args.lexicon = '/mnt/lustre/sjtu/home/xc915/superb/nlp_utils/lexicon/librispeech_lexicon.lst'
     dec_args.beam = 50
     dec_args.beam_size_token = 32
     dec_args.beam_threshold = 32

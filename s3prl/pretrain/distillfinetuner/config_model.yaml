@@ -46,6 +46,10 @@ distiller:
   init_teacher_encoder_layers: true
   get_hidden: false
 
+  # decode
+  dictionary_path: /mnt/lustre/sjtu/home/xc915/superb/dataset/librispeech_finetuning_data/100h/dict.ltr.txt
+  enable_decode: True
+
 teacher:
   model: hubert
   model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/fairseq-to-s3prl/hubert_finetune_to_pretrain.pt
