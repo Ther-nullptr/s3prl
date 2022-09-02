@@ -11,11 +11,13 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from pretrain.distillfinetuner.dataset import OnlineWaveDataset
 from upstream.distiller_finetune.model import DistillerConfig, DistillerModel
+import math
 import wandb
+import editdistance
+from argparse import Namespace
 
-# change according to your finetuning model
-# from upstream.hubert.expert import UpstreamExpert
-import upstream
+from fairseq.data.dictionary import Dictionary
+from fairseq.examples.speech_recognition.w2l_decoder import W2lKenLMDecoder
 
 
 def freeze_model(model):
@@ -23,6 +25,21 @@ def freeze_model(model):
     for param in model.parameters():
         param.requires_grad = False
 
+def build_decoder(dictionary_path):
+    dictionary = Dictionary.load(dictionary_path)
+    dec_args = Namespace()
+    dec_args.nbest = 1
+    dec_args.criterion = "ctc"
+    dec_args.kenlm_model = None
+    dec_args.lexicon = None
+    dec_args.beam = 50
+    dec_args.beam_size_token = 32
+    dec_args.beam_threshold = 32
+    dec_args.lm_weight = 2.0
+    dec_args.word_score = -1.0
+    dec_args.unk_weight = -math.inf
+    dec_args.sil_weight = 0
+    return W2lKenLMDecoder(dec_args, dictionary)
 
 class UpstreamPretrainExpert(nn.Module):
     """
@@ -290,6 +307,8 @@ class DistillerForPretrain(nn.Module):
 
         self.temperature = config.temperature
 
+        self.steps = 0
+
         #! copy value from teacher
         if config.init_teacher_conv_layers:
             print("[DistillerForPretrain] - "
@@ -309,6 +328,11 @@ class DistillerForPretrain(nn.Module):
             for l in range(config.encoder_layers):  #! 2
                 self.distiller.encoder.layers[l].load_state_dict(
                     self.teacher.model.encoder.layers[l].state_dict())
+
+        self.enable_decode = config.enable_decode
+        self.dictionary_path = config.dictionary_path
+        if(self.enable_decode):
+            self.decoder = build_decoder(self.dictionary_path)
 
     def forward(
         self,
@@ -359,6 +383,7 @@ class DistillerForPretrain(nn.Module):
             teacher_logits = self.linear_projection(x)  # T x B x kinds
 
             # TODO valid and decode
+
 
         (
             total_loss,
@@ -475,6 +500,51 @@ class DistillerForPretrain(nn.Module):
         teacher_prob_log = F.log_softmax(teacher_logits, dim=-1)
         student_prob_log = F.log_softmax(student_logits, dim=-1)
 
+        # valid
+        
+        if(self.steps % 200 == 0 and self.enable_decode):
+            w_errs = 0
+            w_len = 0
+            print(f"[Valid] - begin to valid -- step {self.steps}")
+            with torch.no_grad():
+                teacher_prob_log_t = teacher_prob_log.transpose(0, 1).float().contiguous().cpu().unsqueeze(0) # B x T x kinds
+                student_prob_log_t = student_prob_log.transpose(0, 1).float().contiguous().cpu().unsqueeze(0) # B x T x kinds
+
+                for (teacher_lp, student_lp) in zip(teacher_prob_log_t, student_prob_log_t):
+                    teacher_decoded = None
+                    teacher_decoded = self.decoder.decode(teacher_lp)
+                    if len(teacher_decoded) < 1:
+                        teacher_decoded = None
+                    else:
+                        teacher_decoded = teacher_decoded[0]
+                        if len(teacher_decoded) < 1:
+                            teacher_decoded = None
+                        else:
+                            teacher_decoded = teacher_decoded[0]
+
+                    student_decoded = None
+                    student_decoded = self.decoder.decode(student_lp)
+                    if len(student_decoded) < 1:
+                        student_decoded = None
+                    else:
+                        student_decoded = student_decoded[0]
+                        if len(student_decoded) < 1:
+                            student_decoded = None
+                        else:
+                            student_decoded = student_decoded[0]
+
+                    if(teacher_decoded is not None and student_decoded is not None and "words" in teacher_decoded and "words" in student_decoded):
+                        teacher_words = teacher_decoded["words"]
+                        student_words = student_decoded["words"]
+                        print(f'teacher words: {teacher_words}')
+                        print(f'student words: {student_words}')
+                        w_errs += editdistance.eval(teacher_words, student_words)
+                        w_len += len(teacher_words)
+                
+                print(f'wer: {w_errs/w_len}')
+                wandb.log({'wer': w_errs/w_len})
+
+        self.steps += 1
         prob_size = teacher_prob_log.shape
         teacher_prob_log = teacher_prob_log.view(
             (prob_size[0] * prob_size[1], prob_size[2]))
