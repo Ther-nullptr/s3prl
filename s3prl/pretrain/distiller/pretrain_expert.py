@@ -241,6 +241,10 @@ class DistillerForPretrain(nn.Module):
         if self.attn_loss > 0:
             print("[DistillerForPretrain] - Enabled attn loss.")
 
+        self.embedding_loss = config.embedding_loss
+        if self.embedding_loss > 0:
+            print("[DistillerForPretrain] - Enabled embedding loss.")
+
         #! copy value from teacher
         if config.init_teacher_conv_layers:
             print(
@@ -285,7 +289,7 @@ class DistillerForPretrain(nn.Module):
         return_other = False
         # Forward model
         if self.config.get_hidden == False:
-            feat, feat_final, pred, pad_mask = self.distiller(wave_input, pad_mask) #! distiller model(the small one)
+            feat, feat_final, pred, pad_mask, student_embeddings = self.distiller(wave_input, pad_mask) #! distiller model(the small one)
         else:
             feat, feat_final, pred, pad_mask, student_hiddens, student_attns = self.distiller(wave_input, pad_mask, get_hidden=True)
             student_hiddens = torch.stack(student_hiddens, dim=1)
@@ -297,6 +301,9 @@ class DistillerForPretrain(nn.Module):
             wave_orig = [wave.to(wave_input.device) for wave in wave_orig]
             with torch.cuda.amp.autocast(False):
                 teacher_hiddens = self.teacher(wave_orig)
+                # get the embeddings
+                teacher_logits = teacher_hiddens["hidden_states"][-1] # B x T x C
+                teacher_embeddings = self.teacher.model.get_embeddings(teacher_logits)
             if self.config.task_emb_type == "none":
                 teacher_hiddens = teacher_hiddens["hidden_states"][self.config.n_tasks]
                 teacher_hiddens = teacher_hiddens.unsqueeze(1)
@@ -317,12 +324,14 @@ class DistillerForPretrain(nn.Module):
             feat_pen,
             sim_loss,
             sim_layer_loss,
-        ) = self.compute_loss(feat, pred, teacher_hiddens, return_other) #! feat [12, 752, 512]  pred [12, 2, 752, 768]  teacher_hiddens [12, 2, 752, 768]
+            emb_loss
+        ) = self.compute_loss(feat, pred, teacher_hiddens, teacher_embeddings, student_embeddings, return_other) #! feat [12, 752, 512]  pred [12, 2, 752, 768]  teacher_hiddens [12, 2, 752, 768]
 
         wandb.log({
             "total_loss": total_loss,
             "rec_loss": rec_loss,
-            "sim_loss": sim_loss
+            "sim_loss": sim_loss,
+            "emb_loss": emb_loss
         })
 
         for i, item in enumerate(rec_layer_loss):
@@ -373,7 +382,7 @@ class DistillerForPretrain(nn.Module):
 
         return total_loss, other_res
 
-    def compute_loss(self, feat, pred, target, return_other=False):
+    def compute_loss(self, feat, pred, target, teacher_embeddings, student_embeddings, return_other=False):
         """
         Computes loss.
         Inputs:
@@ -405,13 +414,19 @@ class DistillerForPretrain(nn.Module):
         # Feature loss
         feat_pen = feat.float().pow(2).mean() #? what is feature loss? (maybe it is not important)
 
+        # embedding loss
+        if self.embedding_loss > 0:
+            emb_loss = -F.logsigmoid(F.cosine_similarity(teacher_embeddings, student_embeddings, dim=-1))
+            emb_loss = emb_loss.mean()
+
         total_loss = (
             rec_loss
             + feat_pen * self.config.feat_pen_loss
             + sim_loss * self.cosine_loss
+            + emb_loss * self.embedding_loss
         )
 
-        return total_loss, rec_loss, rec_layer_loss, feat_pen, sim_loss, sim_layer_loss
+        return total_loss, rec_loss, rec_layer_loss, feat_pen, sim_loss, sim_layer_loss, emb_loss
 
     def compute_loss_hidden(self, feat, pred, target, teacher_hiddens, teacher_attns, student_hiddens, student_attns, return_other=False):
         """

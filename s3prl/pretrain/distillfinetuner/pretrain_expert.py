@@ -354,6 +354,8 @@ class DistillerForPretrain(nn.Module):
                                               
             teacher_logits = self.linear_projection(x)  # T x B x kinds
 
+            # TODO valid and decode
+
         (
             total_loss,
             rec_loss,

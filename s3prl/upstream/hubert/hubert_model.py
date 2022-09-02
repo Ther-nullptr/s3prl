@@ -607,3 +607,6 @@ class HubertModel(torch.nn.Module):
     def remove_pretraining_modules(self):
         self.target_glu = None
         self.final_proj = None
+
+    def get_embeddings(self, x):
+        return self.final_proj(x)

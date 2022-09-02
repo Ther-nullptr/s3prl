@@ -65,6 +65,7 @@ class DistillerConfig:
         self.cosine_loss = float(config.get("cosine_loss", 0.0))
         self.hidden_loss = float(config.get("hidden_loss", 0.0))
         self.attn_loss = float(config.get("attn_loss", 0.0))
+        self.embedding_loss = float(config.get("embedding_loss", 0.0))
 
         # When task_emb_type == 'expand-last' only
         self.pred_layer_id = list(
@@ -175,6 +176,8 @@ class DistillerModel(nn.Module):
         else:
             raise NotImplementedError(f"Unknown out layer type {config.out_layer_type}")
 
+        self.final_proj = nn.Linear(config.final_dim, 256)
+
     def forward_feature(self, wave, pad_mask):
         """Forward feature extractor"""
 
@@ -274,7 +277,9 @@ class DistillerModel(nn.Module):
             )
             # B x N x T x D
 
-        return feat, feat_final, pred, pad_mask
+        embeddings = self.get_embeddings(hidden) # B x T x E
+
+        return feat, feat_final, pred, pad_mask, embeddings
 
     def cal_pad_mask(self, pad_mask, max_len):
         """Calculates pad mask after conv."""
@@ -293,3 +298,7 @@ class DistillerModel(nn.Module):
 
     def generate_task_id(self, device):
         return torch.arange(self.n_tasks, device=device, dtype=torch.long)
+
+    def get_embeddings(self, x):
+        return self.final_proj(x)
+
