@@ -172,7 +172,7 @@ def main():
     wandb.init(project=args.expname)
 
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         filename=f"result/pretrain/{args.expname}.log",
         filemode="w",
         format=

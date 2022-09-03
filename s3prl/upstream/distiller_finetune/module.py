@@ -252,36 +252,19 @@ class TransformerEncoder(nn.Module):
         self.dropout = args.dropout
         self.embedding_dim = args.encoder_embed_dim
 
-        self.pos_conv = nn.Conv1d(
-            self.embedding_dim,
-            self.embedding_dim,
-            kernel_size=args.conv_pos,
-            padding=args.conv_pos // 2,
-            groups=args.conv_pos_groups,
-        )
-        dropout = 0
-        std = math.sqrt((4 * (1.0 - dropout)) / (args.conv_pos * self.embedding_dim))
-        nn.init.normal_(self.pos_conv.weight, mean=0, std=std)
-        nn.init.constant_(self.pos_conv.bias, 0)
-
         if args.extractor_mode == 'default':
-            self.pos_conv = nn.utils.weight_norm(self.pos_conv, name="weight", dim=2)
-            self.pos_conv = nn.Sequential(self.pos_conv, SamePad(args.conv_pos), nn.GELU())
+            self.pos_conv = self.make_conv_pos(
+                self.embedding_dim,
+                args.conv_pos,
+                args.conv_pos_groups,
+            )
 
         else:
-            self.pos_conv = nn.utils.weight_norm(self.pos_conv, name="weight", dim=2)
-            self.pos_conv = nn.Sequential(
-                    *[nn.Sequential(
-                        self.pos_conv, 
-                        SamePad(args.conv_pos), 
-                        nn.GELU(),
-                        nn.Sequential(
-                                TransposeLast(),
-                                LayerNorm(self.embedding_dim, elementwise_affine=False),
-                                TransposeLast()
-                            )
-                        ) for i in range (5)] 
-                    )
+            num_layers = 5
+            k = max(3, 95 // num_layers)
+            self.pos_conv = self.make_conv_block(
+                self.embedding_dim, k, args.conv_pos_groups, num_layers
+            )
 
         print(f"[TransformerEncoder] - Attention type = {args.attention_type}")
         self.layers = nn.ModuleList(
@@ -306,6 +289,45 @@ class TransformerEncoder(nn.Module):
         self.layerdrop = args.encoder_layerdrop
 
         self.apply(init_bert_params)
+
+    def make_conv_block(self, e, k, g, l):
+        return nn.Sequential(
+            *[
+                nn.Sequential(
+                    nn.Conv1d(
+                        e,
+                        e,
+                        kernel_size=k,
+                        padding=k // 2,
+                        groups=g,
+                    ),
+                    SamePad(k),
+                    TransposeLast(),
+                    LayerNorm(e, elementwise_affine=False),
+                    TransposeLast(),
+                    nn.GELU(),
+                )
+                for _ in range(l)
+            ]
+        )
+
+    def make_conv_pos(self, e, k, g):
+        pos_conv = nn.Conv1d(
+            e,
+            e,
+            kernel_size=k,
+            padding=k // 2,
+            groups=g,
+        )
+        dropout = 0
+        std = math.sqrt((4 * (1.0 - dropout)) / (k * e))
+        nn.init.normal_(pos_conv.weight, mean=0, std=std)
+        nn.init.constant_(pos_conv.bias, 0)
+
+        pos_conv = nn.utils.weight_norm(pos_conv, name="weight", dim=2)
+        pos_conv = nn.Sequential(pos_conv, SamePad(k), nn.GELU())
+
+        return pos_conv
 
     def forward(self, x, padding_mask=None, attn_mask=None, get_hidden=True):
         x, layer_results, attn_results = self.extract_features(
