@@ -63,7 +63,7 @@ class UpstreamPretrainExpert(nn.Module):
         if type(upstream_config) == str:
             self.upstream_config = yaml.load(open(upstream_config, "r"),
                                              Loader=yaml.FullLoader)
-            logger.info(
+            print(
                 "[UpstreamPretrainExpert] - Using upstream config from:",
                 upstream_config,
             )
@@ -390,8 +390,6 @@ class DistillerForPretrain(nn.Module):
                                               dim=1)  # B x N x T x D
 
             teacher_logits = self.linear_projection(x)  # T x B x kinds
-
-            # TODO valid and decode
 
 
         (
