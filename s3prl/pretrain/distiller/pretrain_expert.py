@@ -349,7 +349,7 @@ class DistillerForPretrain(nn.Module):
                 teacher_hiddens = teacher_hiddens["hidden_states"][self.config.n_tasks]
                 teacher_hiddens = teacher_hiddens.unsqueeze(1)
             else:
-                if self.config.task_emb_type in ["expand-last", "hnet", "self-hidden"]:
+                if self.config.task_emb_type in ["expand-last", "hnet", "self-hidden", "layer-wise"]:
                     teacher_hiddens = [
                         teacher_hiddens["hidden_states"][i]
                         for i in self.distiller.pred_layer_id
