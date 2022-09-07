@@ -90,6 +90,11 @@ class DistillerConfig:
             config.get("get_hidden", False)
         )
 
+        # final proj type
+        self.projection_type = str(
+            config.get("projection_type", "type1")
+        )
+
         # decode
         self.enable_decode = bool(
             config.get("enable_decode", False)
@@ -97,7 +102,6 @@ class DistillerConfig:
         self.dictionary_path = str(
             config.get("dictionary_path", 'dict.ltr.txt')
         )
-
 
 class DistillerModel(nn.Module):
     """
@@ -188,7 +192,10 @@ class DistillerModel(nn.Module):
         else:
             raise NotImplementedError(f"Unknown out layer type {config.out_layer_type}")
 
-        self.final_proj = nn.Linear(config.final_dim, 256)
+        if config.projection_type == 'type1':
+            self.final_proj = nn.Linear(config.final_dim, 256)
+        else:
+            self.final_proj = nn.Linear(config.final_dim, 504)
 
     def forward_feature(self, wave, pad_mask):
         """Forward feature extractor"""

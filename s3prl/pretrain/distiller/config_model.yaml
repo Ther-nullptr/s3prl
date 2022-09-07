@@ -51,6 +51,9 @@ distiller:
   dictionary_path: /mnt/lustre/sjtu/home/xc915/superb/dataset/librispeech_finetuning_data/100h/dict.ltr.txt
   enable_decode: True
 
+  # proj
+  projection_type: type2
+
 teacher:
   model: hubert
   model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/fairseq-to-s3prl/hubert_base.ls960.pt

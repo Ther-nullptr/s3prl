@@ -307,6 +307,9 @@ class DistillerForPretrain(nn.Module):
         if(self.enable_decode):
             self.decoder = build_decoder(self.dictionary_path)
 
+        # final proj
+        self.projection_type = config.projection_type
+
     def forward(
         self,
         wave_input: torch.Tensor,
@@ -458,16 +461,23 @@ class DistillerForPretrain(nn.Module):
         if self.embedding_loss > 0:
             embedding_size = teacher_embeddings.shape
             teacher_embeddings = teacher_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2])
-            student_embeddings = student_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2]) # [b*t, 256]
             with torch.no_grad():
                 label_embs = self.teacher.model.label_embs_concat
                 label_embs_teacher = label_embs.unsqueeze(1).expand(-1, teacher_embeddings.size(0), -1) # [504, b*t, 256]
                 teacher_embedding_logits = torch.cosine_similarity(teacher_embeddings.float(), label_embs_teacher.float(), dim=-1).type_as(teacher_embeddings)
                 teacher_embedding_logits = teacher_embedding_logits.transpose(0, 1) # [b*t, 504]
-            student_embedding_logits = torch.cosine_similarity(student_embeddings.float(), label_embs_teacher.float(), dim=-1).type_as(student_embeddings)
-            student_embedding_logits = student_embedding_logits.transpose(0, 1) # [b*t, 504]
-            teacher_prob_log = F.log_softmax(teacher_embedding_logits, dim=-1)
-            student_prob_log = F.log_softmax(student_embedding_logits, dim=-1)
+                teacher_prob_log = F.log_softmax(teacher_embedding_logits, dim=-1)
+            if self.projection_type == 'type1':
+                student_embeddings = student_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2]) # [b*t, 256]
+                student_embedding_logits = torch.cosine_similarity(student_embeddings.float(), label_embs_teacher.float(), dim=-1).type_as(student_embeddings)
+                student_embedding_logits = student_embedding_logits.transpose(0, 1) # [b*t, 504]
+            else:
+                student_embedding_logits = student_embeddings.view(embedding_size[0] * embedding_size[1], student_embeddings.shape[2]) # [b*t,504]
+            student_prob_log = F.log_softmax(student_embedding_logits, dim=-1) 
+            emb_loss = F.kl_div(input = student_prob_log / self.temperature,
+                                target = teacher_prob_log / self.temperature,
+                                log_target = True,
+                                reduction='batchmean') * self.temperature ** 2
 
             # valid
             if(self.steps % 200 == 0 and self.enable_decode):
@@ -520,11 +530,6 @@ class DistillerForPretrain(nn.Module):
                     logger.info(f'wer: {w_errs/w_len}')
                     wandb.log({'wer': w_errs/w_len})
             self.steps += 1
-
-            emb_loss = F.kl_div(input = student_prob_log / self.temperature,
-                                target = teacher_prob_log / self.temperature,
-                                log_target = True,
-                                reduction='batchmean') * self.temperature ** 2
 
         total_loss = (
             rec_loss
