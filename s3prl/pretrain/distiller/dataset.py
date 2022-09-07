@@ -43,7 +43,7 @@ class OnlineWaveDataset(WaveDataset):
             return torch.FloatTensor(np.load(os.path.join(self.root, feat_path)))
         wav, _ = torchaudio.load(os.path.join(self.libri_root, feat_path), normalize=True)
         #! when distill data2vec, remember to add norm!
-        wav = F.layer_norm(wav, wav.shape) #! when use data2vec
+        # wav = F.layer_norm(wav, wav.shape) #! when use data2vec
         return wav.squeeze()  # (seq_len)
 
     def __getitem__(self, index):

@@ -33,7 +33,8 @@ distiller:
   task_emb_type: expand-last
   loss_type: l1
   feat_pen_loss: 0.0
-  cosine_loss: 1.0  # cosine similarity loss
+  rec_loss: 0.0
+  cosine_loss: 0.0  # cosine similarity loss
   hidden_loss: 0.0  # hidden loss
   attn_loss: 0.0 # attn loss
   kldiv_loss: 1.0 # kldiv loss
@@ -55,6 +56,8 @@ teacher:
   model_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/fairseq-to-s3prl/hubert_finetune_to_pretrain.pt
   linear_projection_path: /mnt/lustre/sjtu/home/xc915/superb/upstream_model/linear_projection/hubert_linear_projection.pt
   n_layers: 12
+  use_ckpt: False # student
+  ckpt: /mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/distill_hubert_finetune/states-epoch-1.ckpt
 
 task:
   sequence_length: 250000  # 15.6 secs
