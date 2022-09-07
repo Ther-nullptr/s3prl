@@ -18,7 +18,6 @@ from collections import deque, namedtuple
 
 import numpy as np
 import torch
-from examples.speech_recognition.data.replabels import unpack_replabels
 from fairseq import tasks
 from fairseq.utils import apply_to_sample
 from omegaconf import open_dict
@@ -120,6 +119,7 @@ class W2lViterbiDecoder(W2lDecoder):
             [{"tokens": self.get_tokens(viterbi_path[b].tolist()), "score": 0}]
             for b in range(B)
         ]
+
 
 
 class W2lKenLMDecoder(W2lDecoder):
