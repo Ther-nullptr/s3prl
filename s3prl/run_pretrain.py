@@ -169,10 +169,10 @@ def main():
     # get config and arguments
     args, config = get_pretrain_args()
     # enable wandb
-    wandb.init(project=args.expname)
+    wandb.init(project=args.expname,name=args.expname)
 
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         filename=f"result/pretrain/{args.expname}.log",
         filemode="w",
         format=

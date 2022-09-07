@@ -8,7 +8,7 @@ runner:
   save_step: 10000
   max_keep: 20
 
-  fp16: false
+  fp16: true
 
 optimizer:
   name: AdamW_with_schedule

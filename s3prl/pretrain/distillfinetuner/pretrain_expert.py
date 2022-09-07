@@ -314,7 +314,6 @@ class DistillerForPretrain(nn.Module):
             logger.info("[DistillerForPretrain] - Enabled kldiv loss.")
 
         self.temperature = config.temperature
-
         self.steps = 0
 
         #! copy value from teacher
@@ -390,7 +389,6 @@ class DistillerForPretrain(nn.Module):
                                               dim=1)  # B x N x T x D
 
             teacher_logits = self.linear_projection(x)  # T x B x kinds
-
 
         (
             total_loss,
@@ -513,8 +511,8 @@ class DistillerForPretrain(nn.Module):
             w_len = 0
             logger.info(f"[Valid] - begin to valid -- step {self.steps}")
             with torch.no_grad():
-                teacher_prob_log_t = teacher_prob_log.transpose(0, 1).float().contiguous().cpu().unsqueeze(0) # B x T x kinds
-                student_prob_log_t = student_prob_log.transpose(0, 1).float().contiguous().cpu().unsqueeze(0) # B x T x kinds
+                teacher_prob_log_t = teacher_prob_log.transpose(0, 1).float().contiguous().cpu().unsqueeze(0) # 1 x B x T x kinds
+                student_prob_log_t = student_prob_log.transpose(0, 1).float().contiguous().cpu().unsqueeze(0) # 1 x B x T x kinds
 
                 for (teacher_lp, student_lp) in zip(teacher_prob_log_t[0:3], student_prob_log_t[0:3]):
                     teacher_decoded = None

@@ -11,13 +11,40 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from pretrain.distiller.dataset import OnlineWaveDataset
 from upstream.distiller.model import DistillerConfig, DistillerModel
+import math
 import wandb
+import logging
+import editdistance
+import wandb
+from argparse import Namespace
 
+from fairseq.data.dictionary import Dictionary
+from .w2l_decoder import W2lViterbiDecoder
+
+logger = logging.getLogger(__name__)
 
 def freeze_model(model):
     """Freeze all parameters in a model."""
     for param in model.parameters():
         param.requires_grad = False
+
+
+def build_decoder(dictionary_path):
+    dictionary = Dictionary.load(dictionary_path)
+    dec_args = Namespace()
+    dec_args.nbest = 1
+    dec_args.criterion = "ctc"
+    dec_args.kenlm_model = '/mnt/lustre/sjtu/home/xc915/superb/nlp_utils/arpa/4-gram.mmap'
+    dec_args.lexicon = '/mnt/lustre/sjtu/home/xc915/superb/nlp_utils/lexicon/librispeech_lexicon.lst'
+    dec_args.beam = 50
+    dec_args.beam_size_token = 32
+    dec_args.beam_threshold = 32
+    dec_args.lm_weight = 2.0
+    dec_args.word_score = -1.0
+    dec_args.unk_weight = -math.inf
+    dec_args.sil_weight = 0
+
+    return W2lViterbiDecoder(dec_args, dictionary)
 
 class UpstreamPretrainExpert(nn.Module):
     """
@@ -37,13 +64,12 @@ class UpstreamPretrainExpert(nn.Module):
             self.upstream_config = yaml.load(
                 open(upstream_config, "r"), Loader=yaml.FullLoader
             )
-            print(
-                "[UpstreamPretrainExpert] - Using upstream config from:",
-                upstream_config,
+            logger.info(
+                "[UpstreamPretrainExpert] - Using upstream config"
             )
         elif type(upstream_config) == dict:
             self.upstream_config = upstream_config
-            print(
+            logger.info(
                 "[UpstreamPretrainExpert] - Using upstream config from the previous experiment."
             )
         else:
@@ -51,7 +77,7 @@ class UpstreamPretrainExpert(nn.Module):
 
         self._get_train_dataloader()
 
-        print("[UpstreamPretrainExpert] - Initializing model...")
+        logger.info("[UpstreamPretrainExpert] - Initializing model...")
         model_config = DistillerConfig(self.upstream_config["distiller"])
         self.model = DistillerForPretrain(
             model_config, edict(self.upstream_config["teacher"])
@@ -59,11 +85,11 @@ class UpstreamPretrainExpert(nn.Module):
 
         if self.multi_gpu:
             self.model = torch.nn.DataParallel(self.model)
-            print(
+            logger.info(
                 "[UpstreamPretrainExpert] - Multi-GPU training Enabled: "
                 + str(torch.cuda.device_count())
             )
-        print(
+        logger.info(
             "[UpstreamPretrainExpert] - Number of parameters: "
             + str(sum(p.numel() for p in self.model.parameters() if p.requires_grad))
         )
@@ -176,26 +202,26 @@ class DistillerForPretrain(nn.Module):
         super().__init__()
         self.config = config
         self.distiller = DistillerModel(config) #! build the distiller model #! what is the shape of config
-        print("[DistillerModel] - The structure of distiller model")
-        print(self.distiller)
+        logger.info("[DistillerModel] - The structure of distiller model")
+        logger.info(self.distiller)
 
         self.teacher_config = teacher_config
         # teacher = torch.hub.load("s3prl/s3prl", teacher_config.model) #! get the teacher model
 
         #! get the model locally
         if teacher_config.model.find("wav2vec2") >= 0:
-            print("[DistillerForPretrain] - use wav2vec2 as teacher model")
+            logger.info("[DistillerForPretrain] - use wav2vec2 as teacher model")
             from upstream.wav2vec2.expert import UpstreamExpert
             teacher = UpstreamExpert(teacher_config.model_path)
         elif teacher_config.model.find("data2vec") >= 0:
-            print("[DistillerForPretrain] - use data2vec as teacher model")
+            logger.info("[DistillerForPretrain] - use data2vec as teacher model")
             from upstream.data2vec.expert import UpstreamExpert
             teacher = UpstreamExpert(teacher_config.model_path)
         else:
-            print("[DistillerForPretrain] - use hubert as teacher model")
+            logger.info("[DistillerForPretrain] - use hubert as teacher model")
             from upstream.hubert.expert import UpstreamExpert
             teacher = UpstreamExpert(teacher_config.model_path)
-        print(teacher.model)
+        logger.info(teacher.model)
 
         if (
             teacher_config.model.find("hubert") >= 0
@@ -203,10 +229,10 @@ class DistillerForPretrain(nn.Module):
             or teacher_config.model.find("data2vec") >= 0
         ):
             teacher.model.encoder.layerdrop = 0
-            print("[DistillerForPretrain] - Disabled teacher's encoder layerdrop")
+            logger.info("[DistillerForPretrain] - Disabled teacher's encoder layerdrop")
 
         # if(teacher_config.model.find("data2vec") >= 0):
-        #     print(teacher.model.state_dict)
+        #     logger.info(teacher.model.state_dict)
         #     teacher.model.cfg.task.normalize = False
 
         assert self.distiller.n_tasks <= teacher_config.n_layers, (
@@ -216,7 +242,7 @@ class DistillerForPretrain(nn.Module):
         self.teacher = teacher
         freeze_model(self.teacher)
 
-        print(
+        logger.info(
             "[DistillerForPretrain] - Using {} as teacher with {} layers".format(
                 teacher_config.model, teacher_config.n_layers
             )
@@ -231,23 +257,25 @@ class DistillerForPretrain(nn.Module):
 
         self.cosine_loss = config.cosine_loss #! 1.0
         if self.cosine_loss > 0:
-            print("[DistillerForPretrain] - Enabled cosine similarity loss.")
+            logger.info("[DistillerForPretrain] - Enabled cosine similarity loss.")
 
         self.hidden_loss = config.hidden_loss #! 1.0
         if self.hidden_loss > 0:
-            print("[DistillerForPretrain] - Enabled hidden loss.")
+            logger.info("[DistillerForPretrain] - Enabled hidden loss.")
 
         self.attn_loss = config.attn_loss #! 1.0
         if self.attn_loss > 0:
-            print("[DistillerForPretrain] - Enabled attn loss.")
+            logger.info("[DistillerForPretrain] - Enabled attn loss.")
 
         self.embedding_loss = config.embedding_loss
         if self.embedding_loss > 0:
-            print("[DistillerForPretrain] - Enabled embedding loss.")
+            logger.info("[DistillerForPretrain] - Enabled embedding loss.")
+
+        self.temperature = config.temperature
 
         #! copy value from teacher
         if config.init_teacher_conv_layers:
-            print(
+            logger.info(
                 "[DistillerForPretrain] - "
                 "Initializing feature extractor from teacher"
             )
@@ -260,7 +288,7 @@ class DistillerForPretrain(nn.Module):
                 )
 
         if config.init_teacher_encoder_layers:
-            print("[DistillerForPretrain] - " "Initializing encoder from teacher")
+            logger.info("[DistillerForPretrain] - " "Initializing encoder from teacher")
             self.distiller.encoder.pos_conv.load_state_dict(
                 self.teacher.model.encoder.pos_conv.state_dict(),strict=False
             )
@@ -268,6 +296,16 @@ class DistillerForPretrain(nn.Module):
                 self.distiller.encoder.layers[l].load_state_dict(
                     self.teacher.model.encoder.layers[l].state_dict()
                 )
+
+        # freeze the label embedding
+        self.teacher.model.label_embs_concat.requires_grad = False
+
+        # decode
+        self.steps = 0
+        self.enable_decode = config.enable_decode
+        self.dictionary_path = config.dictionary_path
+        if(self.enable_decode):
+            self.decoder = build_decoder(self.dictionary_path)
 
     def forward(
         self,
@@ -415,9 +453,78 @@ class DistillerForPretrain(nn.Module):
         feat_pen = feat.float().pow(2).mean() #? what is feature loss? (maybe it is not important)
 
         # embedding loss
+        # get pseudo label sequences
+        
         if self.embedding_loss > 0:
-            emb_loss = -F.logsigmoid(F.cosine_similarity(teacher_embeddings, student_embeddings, dim=-1))
-            emb_loss = emb_loss.mean()
+            embedding_size = teacher_embeddings.shape
+            teacher_embeddings = teacher_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2])
+            student_embeddings = student_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2]) # [b*t, 256]
+            with torch.no_grad():
+                label_embs = self.teacher.model.label_embs_concat
+                label_embs_teacher = label_embs.unsqueeze(1).expand(-1, teacher_embeddings.size(0), -1) # [504, b*t, 256]
+                teacher_embedding_logits = torch.cosine_similarity(teacher_embeddings.float(), label_embs_teacher.float(), dim=-1).type_as(teacher_embeddings)
+                teacher_embedding_logits = teacher_embedding_logits.transpose(0, 1) # [b*t, 504]
+            student_embedding_logits = torch.cosine_similarity(student_embeddings.float(), label_embs_teacher.float(), dim=-1).type_as(student_embeddings)
+            student_embedding_logits = student_embedding_logits.transpose(0, 1) # [b*t, 504]
+            teacher_prob_log = F.log_softmax(teacher_embedding_logits, dim=-1)
+            student_prob_log = F.log_softmax(student_embedding_logits, dim=-1)
+
+            # valid
+            if(self.steps % 200 == 0 and self.enable_decode):
+                w_errs = 0
+                w_len = 0
+                logger.info(f"[Valid] - begin to valid -- step {self.steps}")
+                with torch.no_grad():
+                    teacher_prob_log_t = teacher_prob_log.view(embedding_size[0], embedding_size[1], -1).float().contiguous().cpu().unsqueeze(0) # 1 x B x T x kinds
+                    student_prob_log_t = student_prob_log.view(embedding_size[0], embedding_size[1], -1).float().contiguous().cpu().unsqueeze(0) # 1 x B x T x kinds
+                    for (teacher_lp, student_lp) in zip(teacher_prob_log_t[0:3], student_prob_log_t[0:3]):
+                        teacher_decoded = None
+                        teacher_decoded = self.decoder.decode(teacher_lp)
+                        if len(teacher_decoded) < 1:
+                            teacher_decoded = None
+                        else:
+                            teacher_decoded = teacher_decoded[0]
+                            if len(teacher_decoded) < 1:
+                                teacher_decoded = None
+                            else:
+                                teacher_decoded = teacher_decoded[0]
+
+                        student_decoded = None
+                        student_decoded = self.decoder.decode(student_lp)
+                        if len(student_decoded) < 1:
+                            student_decoded = None
+                        else:
+                            student_decoded = student_decoded[0]
+                            if len(student_decoded) < 1:
+                                student_decoded = None
+                            else:
+                                student_decoded = student_decoded[0]
+
+                        if(teacher_decoded is not None and student_decoded is not None and "tokens" in teacher_decoded and "tokens" in student_decoded):
+                            teacher_words = teacher_decoded["tokens"]
+                            student_words = student_decoded["tokens"]
+
+                            teacher_string = ''
+                            student_string = ''
+                            for token in teacher_words:
+                                teacher_string += str(int(token))
+                                teacher_string += ' '
+                            for token in student_words:
+                                student_string += str(int(token))
+                                student_string += ' '
+                            logger.info(f'teacher string: {teacher_string}')
+                            logger.info(f'student string: {student_string}')
+                            w_errs += editdistance.eval(teacher_string.split(" "), student_string.split(" "))
+                            w_len += len(teacher_string)
+
+                    logger.info(f'wer: {w_errs/w_len}')
+                    wandb.log({'wer': w_errs/w_len})
+            self.steps += 1
+
+            emb_loss = F.kl_div(input = student_prob_log / self.temperature,
+                                target = teacher_prob_log / self.temperature,
+                                log_target = True,
+                                reduction='batchmean') * self.temperature ** 2
 
         total_loss = (
             rec_loss

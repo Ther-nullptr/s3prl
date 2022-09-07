@@ -5,6 +5,7 @@
 
 import torch
 from torch import nn
+import logging
 
 from .module import (
     SplitLinear,
@@ -12,6 +13,8 @@ from .module import (
     ConvFeatureExtractionModel,
     GradMultiply,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class DistillerConfig:
@@ -66,6 +69,7 @@ class DistillerConfig:
         self.hidden_loss = float(config.get("hidden_loss", 0.0))
         self.attn_loss = float(config.get("attn_loss", 0.0))
         self.embedding_loss = float(config.get("embedding_loss", 0.0))
+        self.temperature = float(config.get("temperature", 0.0))
 
         # When task_emb_type == 'expand-last' only
         self.pred_layer_id = list(
@@ -84,6 +88,14 @@ class DistillerConfig:
         )
         self.get_hidden = bool(
             config.get("get_hidden", False)
+        )
+
+        # decode
+        self.enable_decode = bool(
+            config.get("enable_decode", False)
+        )
+        self.dictionary_path = str(
+            config.get("dictionary_path", 'dict.ltr.txt')
         )
 
 
@@ -126,19 +138,19 @@ class DistillerModel(nn.Module):
             self.pred_layer_id = config.pred_layer_id
             self.pred_layer_id_2 = config.pred_layer_id_2
             assert self.n_tasks == len(self.pred_layer_id)
-            print(
+            logger.info(
                 f"[DistillerModel] - Expands the output dimension by {self.n_tasks} times"
             )
-            print(f"[DistillerModel] - Pred layers: {self.pred_layer_id}")
-            print(f"[DistillerModel] - Pred hidden layers: {self.pred_layer_id_2}")
+            logger.info(f"[DistillerModel] - Pred layers: {self.pred_layer_id}")
+            logger.info(f"[DistillerModel] - Pred hidden layers: {self.pred_layer_id_2}")
         elif self.task_emb_type == "self-hidden":
             self.pred_layer_id = config.pred_layer_id
             assert self.n_tasks == len(self.pred_layer_id)
             assert self.n_tasks == config.encoder_layers + 1
-            print("[DistillerModel] - Predicting with self-hidden layers")
-            print(f"[DistillerModel] - Pred layers: {self.pred_layer_id}")
+            logger.info("[DistillerModel] - Predicting with self-hidden layers")
+            logger.info(f"[DistillerModel] - Pred layers: {self.pred_layer_id}")
         elif self.task_emb_type == "none":
-            print(
+            logger.info(
                 f"[DistillerModel] - Disabled task embedding (predicts only layer {self.n_tasks})"
             )
         else:
@@ -162,10 +174,10 @@ class DistillerModel(nn.Module):
         inter_dim = config.out_layer_inter_dim
         inter_dim = inter_dim if inter_dim > 0 else final_emb_size
 
-        print(f"[DistillerModel] - Out layer type: {config.out_layer_type}")
+        logger.info(f"[DistillerModel] - Out layer type: {config.out_layer_type}")
         if config.out_layer_type == "expand-last":
             assert self.task_emb_type == "expand-last"
-            print(f"[DistillerModel] - Inter dim = {inter_dim}")
+            logger.info(f"[DistillerModel] - Inter dim = {inter_dim}")
             self.output_layer = nn.Sequential(
                 nn.Linear(final_emb_size, inter_dim * self.n_tasks),
                 nn.GELU(),
