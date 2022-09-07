@@ -5,7 +5,7 @@
 
 import torch
 from torch import nn
-
+import logging
 from .module import (
     SplitLinear,
     TransformerEncoder,
@@ -13,6 +13,7 @@ from .module import (
     GradMultiply,
 )
 
+logger = logging.getLogger(__name__)
 
 class DistillerConfig:
     """
@@ -52,6 +53,7 @@ class DistillerConfig:
 
         # Output
         self.final_dim = int(config.get("final_dim", 768))
+        self.teacher_final_dim = int(config.get("teacher_final_dim", 768))
         self.out_layer_type = str(config.get("out_layer_type", "expand-last"))
         self.out_layer_inter_dim = int(config.get("out_layer_inter_dim", -1))
 
@@ -142,6 +144,12 @@ class DistillerModel(nn.Module):
             )
             print(f"[DistillerModel] - Pred layers: {self.pred_layer_id}")
             print(f"[DistillerModel] - Pred hidden layers: {self.pred_layer_id_2}")
+        elif self.task_emb_type == "layer-wise":
+            self.pred_layer_id = config.pred_layer_id
+            logger.info(
+                f"[DistillerModel] - teacher model dim: {config.teacher_final_dim}, student model dim: {final_emb_size}"
+            )
+            logger.info(f"[DistillerModel] - Pred layers: {self.pred_layer_id}")
         elif self.task_emb_type == "self-hidden":
             self.pred_layer_id = config.pred_layer_id
             assert self.n_tasks == len(self.pred_layer_id)
@@ -186,6 +194,11 @@ class DistillerModel(nn.Module):
             )
         elif config.out_layer_type in {"none", "self-hidden"}:
             self.output_layer = None
+        elif config.out_layer_type == "layer-wise":
+            assert self.task_emb_type == "layer-wise"
+            self.output_layer = nn.ModuleList([
+                nn.Linear(final_emb_size, config.teacher_final_dim) for _ in range(config.encoder_layers)
+            ])
         else:
             raise NotImplementedError(f"Unknown out layer type {config.out_layer_type}")
 
@@ -287,6 +300,13 @@ class DistillerModel(nn.Module):
                 .permute(0, 2, 1, 3)
             )
             # B x N x T x D
+
+        if (not no_pred) and self.task_emb_type == "layer-wise": #  B x T x stuD -> B x T x teaD -> B x N x T x teaD
+            pred = []
+            for i, proj in enumerate(self.output_layer):
+                result = proj(layer_hiddens[i])
+                pred.append(result)
+            pred = torch.stack(pred, dim=1) # B x N x T x teaD
 
         hidden_transpose = hidden.transpose(0, 1) # B x T x C -> T x B x C
         student_logits = self.linear_projection(hidden_transpose) # T x B x kinds
