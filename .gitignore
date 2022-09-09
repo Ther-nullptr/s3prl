@@ -166,3 +166,6 @@ docs/source/_autosummary/
 sample_hidden_states/
 converted_ckpts/
 
+# results
+downstream_results/
+downstream-results/

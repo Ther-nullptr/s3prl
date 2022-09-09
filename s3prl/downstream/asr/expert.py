@@ -17,6 +17,7 @@ from ..model import *
 from .dataset import SequenceDataset
 from .dictionary import Dictionary
 
+import wandb
 
 def token_to_word(text):
     # Hard coding but it is only used here for now.
@@ -345,6 +346,7 @@ class DownstreamExpert(nn.Module):
         logger.add_scalar(f'asr/{split}-wer', wer, global_step=global_step)
         print(f'{split} uer: {uer}')
         print(f'{split} wer: {wer}')
+        wandb.log({f'asr/{split}-loss': loss, f'asr/{split}-uer': uer, f'asr/{split}-wer': wer})
 
         save_names = []
         if split == 'dev-clean' and wer < self.best_score:

@@ -27,6 +27,8 @@ from .dataset import SpeakerClassifiDataset
 from argparse import Namespace
 from pathlib import Path
 
+import wandb
+
 
 class DownstreamExpert(nn.Module):
     """
@@ -119,6 +121,7 @@ class DownstreamExpert(nn.Module):
                 average,
                 global_step=global_step
             )
+            wandb.log({f'voxceleb1/{mode}-{key}': average})
             with open(Path(self.expdir) / "log.log", 'a') as f:
                 if key == 'acc':
                     print(f"{mode} {key}: {average}")

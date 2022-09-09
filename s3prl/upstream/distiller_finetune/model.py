@@ -229,7 +229,7 @@ class DistillerModel(nn.Module):
 
         feat, pad_mask = self.forward_feature(wave, pad_mask) #! only feature extractor
 
-        if self.task_emb_type not in ["none", "expand-last", "self-hidden"]:
+        if self.task_emb_type not in ["none", "expand-last", "self-hidden", "layer-wise"]:
             if task_id is None:
                 task_id = self.generate_task_id(feat.device)
             elif isinstance(task_id, list):
@@ -283,7 +283,7 @@ class DistillerModel(nn.Module):
         else:
             hidden = self.encoder(feat_final)
 
-        if not no_pred:
+        if not no_pred and self.task_emb_type != "layer-wise":
             if self.task_emb_type == "self-hidden":
                 pred = torch.stack([feat_final] + layer_hiddens, dim=1)
             else:

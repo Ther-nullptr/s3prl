@@ -15,6 +15,8 @@ from s3prl.utility.helper import backup, get_time_tag, hack_isinstance, is_leade
 
 from huggingface_hub import HfApi, HfFolder
 
+import wandb
+
 def get_downstream_args():
     parser = argparse.ArgumentParser()
 
@@ -155,6 +157,9 @@ def main():
 
     # get config and arguments
     args, config, backup_files = get_downstream_args()
+    wandb_name = args.mode + "__" + args.upstream + "__" + args.downstream
+    wandb.init(project=wandb_name, entity="ther", config=config) #! change to tcl606 when you use!
+
     if args.cache_dir is not None:
         torch.hub.set_dir(args.cache_dir)
 

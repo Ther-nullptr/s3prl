@@ -15,7 +15,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 from ..model import *
 from .dataset import SpeechCommandsDataset, SpeechCommandsTestingDataset, CLASSES
-
+import wandb
 
 class DownstreamExpert(nn.Module):
     """
@@ -126,6 +126,7 @@ class DownstreamExpert(nn.Module):
                 average,
                 global_step=global_step
             )
+            wandb.log({mode + key : average})
             with open(Path(self.expdir, "log.log"), 'a') as f:
                 if key == 'acc':
                     print(f"{mode} {key}: {average}")

@@ -93,6 +93,12 @@ class Runner():
         self.upstream = self._get_upstream()
         self.featurizer = self._get_featurizer()
         self.downstream = self._get_downstream()
+        print('upstream model:')
+        print(self.upstream.model)
+        print('featurizer model:')
+        print(self.featurizer.model)
+        print('downstream model:')
+        print(self.downstream.model)
         self.all_entries = [self.upstream, self.featurizer, self.downstream]
 
 
