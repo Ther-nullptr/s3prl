@@ -457,7 +457,6 @@ class DistillerForPretrain(nn.Module):
 
         # embedding loss
         # get pseudo label sequences
-        
         if self.embedding_loss > 0:
             embedding_size = teacher_embeddings.shape
             teacher_embeddings = teacher_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2])
@@ -477,7 +476,7 @@ class DistillerForPretrain(nn.Module):
             emb_loss = F.kl_div(input = student_prob_log / self.temperature,
                                 target = teacher_prob_log / self.temperature,
                                 log_target = True,
-                                reduction='batchmean') * self.temperature ** 2
+                                reduction = 'batchmean') * self.temperature ** 2
 
             # valid
             if(self.steps % 200 == 0 and self.enable_decode):

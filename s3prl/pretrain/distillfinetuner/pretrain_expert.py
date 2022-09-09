@@ -475,7 +475,7 @@ class DistillerForPretrain(nn.Module):
             pred: B x N x T x D
             target: B x N x T x D
         """
-        #! why feat is not same as pred in last dimension(because it is the output of conv)
+        #! why feat is not same as pred in last dimension (because it is the output of conv)
         # Reconstruction loss
         assert pred.shape == target.shape, (pred.shape, target.shape)
         rec_loss = self.loss_func(pred, target)  # B x N x T x D #! L1 loss

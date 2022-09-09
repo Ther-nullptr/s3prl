@@ -31,14 +31,14 @@ distiller:
 
   # Task & loss
   n_tasks: 3
-  task_emb_type: expand-last
+  task_emb_type: layer-wise
   loss_type: l1
   feat_pen_loss: 0.0
   rec_loss: 1.0
   cosine_loss: 1.0  # cosine similarity loss
   hidden_loss: 0.0  # hidden loss
   attn_loss: 0.0 # attn loss
-  kldiv_loss: 1.0 # kldiv loss
+  kldiv_loss: 0.0 # kldiv loss
   temperature: 1.0 
   pred_layer_id: [1,2,3,4,5,6,7,8,9,10,11,12] # layers for predict head loss
   pred_layer_id_2: [4,8] # layers for hidden & attn loss

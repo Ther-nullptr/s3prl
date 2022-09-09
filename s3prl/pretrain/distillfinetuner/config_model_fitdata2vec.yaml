@@ -31,7 +31,7 @@ distiller:
 
   # Task & loss
   n_tasks: 3
-  task_emb_type: expand-last
+  task_emb_type: layer-wise
   loss_type: l1
   feat_pen_loss: 0.0
   rec_loss: 1.0
