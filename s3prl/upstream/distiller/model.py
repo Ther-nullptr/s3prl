@@ -66,6 +66,7 @@ class DistillerConfig:
         self.layer_emb_size = int(config.get("layer_emb_size", 0))
         self.loss_type = str(config.get("loss_type", "l1"))
         self.feat_pen_loss = float(config.get("feat_pen_loss", 0.0))
+        self.rec_loss = float(config.get("rec_loss", 0.0))
         self.cosine_loss = float(config.get("cosine_loss", 0.0))
         self.hidden_loss = float(config.get("hidden_loss", 0.0))
         self.attn_loss = float(config.get("attn_loss", 0.0))
@@ -204,7 +205,7 @@ class DistillerModel(nn.Module):
         else:
             raise NotImplementedError(f"Unknown out layer type {config.out_layer_type}")
 
-        if config.projection_type == 'type1':
+        if config.projection_type == 'type1' or config.projection_type == 'type3':
             self.final_proj = nn.Linear(config.final_dim, 256)
         else:
             self.final_proj = nn.Linear(config.final_dim, 504)
@@ -236,7 +237,7 @@ class DistillerModel(nn.Module):
 
         feat, pad_mask = self.forward_feature(wave, pad_mask) #! only feature extractor
 
-        if self.task_emb_type not in ["none", "expand-last", "self-hidden"]:
+        if self.task_emb_type not in ["none", "expand-last", "self-hidden", "layer-wise"]:
             if task_id is None:
                 task_id = self.generate_task_id(feat.device)
             elif isinstance(task_id, list):
@@ -290,7 +291,7 @@ class DistillerModel(nn.Module):
         else:
             hidden = self.encoder(feat_final)
 
-        if not no_pred:
+        if not no_pred and self.task_emb_type != "layer-wise":
             if self.task_emb_type == "self-hidden":
                 pred = torch.stack([feat_final] + layer_hiddens, dim=1)
             else:

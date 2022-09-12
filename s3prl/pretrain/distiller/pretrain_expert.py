@@ -255,6 +255,10 @@ class DistillerForPretrain(nn.Module):
         else:
             raise NotImplementedError(config.loss_type)
 
+        self.rec_loss = config.rec_loss
+        if self.rec_loss > 0:
+            logger.info("[DistillerForPretrain] - Enabled rec loss.")
+
         self.cosine_loss = config.cosine_loss #! 1.0
         if self.cosine_loss > 0:
             logger.info("[DistillerForPretrain] - Enabled cosine similarity loss.")
@@ -375,11 +379,11 @@ class DistillerForPretrain(nn.Module):
             "emb_loss": emb_loss
         })
 
-        for i, item in enumerate(rec_layer_loss):
-            wandb.log({f"rec_layer_loss_{i}":item})
+        # for i, item in enumerate(rec_layer_loss):
+        #     wandb.log({f"rec_layer_loss_{i}":item})
 
-        for i, item in enumerate(sim_layer_loss):
-            wandb.log({f"sim_layer_loss_{i}":item})
+        # for i, item in enumerate(sim_layer_loss):
+        #     wandb.log({f"sim_layer_loss_{i}":item})
         
         return_other = False
 
@@ -434,12 +438,16 @@ class DistillerForPretrain(nn.Module):
         #! why feat is not same as pred in last dimension(because it is the output of conv)
         # Reconstruction loss
         assert pred.shape == target.shape, (pred.shape, target.shape)
-        rec_loss = self.loss_func(pred, target)  # B x N x T x D #! L1 loss
+        if self.rec_loss > 0:
+            rec_loss = self.loss_func(pred, target)  # B x N x T x D #! L1 loss
 
-        with torch.no_grad():
-            rec_layer_loss = rec_loss.mean((0, 2, 3))
+            with torch.no_grad():
+                rec_layer_loss = rec_loss.mean((0, 2, 3))
 
-        rec_loss = rec_loss.mean()
+            rec_loss = rec_loss.mean()
+        else:
+            rec_loss = 0
+            rec_layer_loss = None
 
         # Cosine similarity loss
         if self.cosine_loss > 0:
@@ -458,28 +466,55 @@ class DistillerForPretrain(nn.Module):
         # embedding loss
         # get pseudo label sequences
         if self.embedding_loss > 0:
-            embedding_size = teacher_embeddings.shape
-            teacher_embeddings = teacher_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2])
+            embedding_size = teacher_embeddings.shape # B x T x 256
+            teacher_embeddings = teacher_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2]) # BT x 256
+
             with torch.no_grad():
                 label_embs = self.teacher.model.label_embs_concat
                 label_embs_teacher = label_embs.unsqueeze(1).expand(-1, teacher_embeddings.size(0), -1) # [504, b*t, 256]
                 teacher_embedding_logits = torch.cosine_similarity(teacher_embeddings.float(), label_embs_teacher.float(), dim=-1).type_as(teacher_embeddings)
                 teacher_embedding_logits = teacher_embedding_logits.transpose(0, 1) # [b*t, 504]
-                teacher_prob_log = F.log_softmax(teacher_embedding_logits, dim=-1)
+                teacher_embedding_logits =  teacher_embedding_logits / self.temperature
+
             if self.projection_type == 'type1':
                 student_embeddings = student_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2]) # [b*t, 256]
                 student_embedding_logits = torch.cosine_similarity(student_embeddings.float(), label_embs_teacher.float(), dim=-1).type_as(student_embeddings)
                 student_embedding_logits = student_embedding_logits.transpose(0, 1) # [b*t, 504]
-            else:
+                student_embedding_logits = student_embedding_logits / self.temperature
+
+            elif self.projection_type == 'type2':
                 student_embedding_logits = student_embeddings.view(embedding_size[0] * embedding_size[1], student_embeddings.shape[2]) # [b*t,504]
-            student_prob_log = F.log_softmax(student_embedding_logits, dim=-1) 
-            emb_loss = F.kl_div(input = student_prob_log / self.temperature,
-                                target = teacher_prob_log / self.temperature,
-                                log_target = True,
-                                reduction = 'batchmean') * self.temperature ** 2
+                student_embedding_logits = student_embedding_logits / self.temperature
+
+            if (self.projection_type == 'type1' or self.projection_type == 'type2'):
+                teacher_prob_log = F.log_softmax(teacher_embedding_logits, dim=-1)
+                student_prob_log = F.log_softmax(student_embedding_logits, dim=-1) 
+                emb_loss = F.kl_div(input = student_prob_log,
+                                    target = teacher_prob_log,
+                                    log_target = True,
+                                    reduction = 'batchmean')
+
+            elif self.projection_type == 'type3':
+                with torch.no_grad():
+                    teacher_prob = F.softmax(teacher_embedding_logits, dim = -1)
+                    teacher_label = teacher_prob.argmax(dim=-1)
+                    print()
+                    pos = torch.index_select(label_embs, 0, teacher_label)
+                    negs = label_embs.unsqueeze(1).expand(-1, teacher_embeddings.size(0), -1)
+                    neg_is_pos = (pos == negs).all(-1)
+                    pos = pos.unsqueeze(0)
+                    targets = torch.cat([pos, negs], dim=0)
+                student_embeddings = student_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2])
+                student_logits = torch.cosine_similarity(student_embeddings.float(), targets.float(), dim=-1).type_as(student_embeddings)
+                student_logits /= self.temperature
+                if neg_is_pos.any():
+                    student_logits[1:][neg_is_pos] = float("-inf")
+                student_logits = student_logits.transpose(0, 1) # BT x 505
+                target_list = torch.zeros(student_logits.shape[0]).long().cuda()
+                emb_loss = F.cross_entropy(student_logits, target_list, reduction='mean')
 
             # valid
-            if(self.steps % 200 == 0 and self.enable_decode):
+            if (self.steps % 200 == 0 and self.enable_decode):
                 w_errs = 0
                 w_len = 0
                 logger.info(f"[Valid] - begin to valid -- step {self.steps}")
@@ -528,10 +563,12 @@ class DistillerForPretrain(nn.Module):
 
                     logger.info(f'wer: {w_errs/w_len}')
                     wandb.log({'wer': w_errs/w_len})
-            self.steps += 1
+        else:
+            emb_loss = 0
+        self.steps += 1
 
         total_loss = (
-            rec_loss
+            rec_loss * self.rec_loss
             + feat_pen * self.config.feat_pen_loss
             + sim_loss * self.cosine_loss
             + emb_loss * self.embedding_loss
@@ -596,7 +633,7 @@ class DistillerForPretrain(nn.Module):
         total_loss = 0
 
         total_loss = (
-            rec_loss
+            rec_loss * self.rec_loss
             + feat_pen * self.config.feat_pen_loss
             + sim_loss * self.cosine_loss
             + hidden_loss * self.hidden_loss

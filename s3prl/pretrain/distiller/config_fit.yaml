@@ -10,9 +10,9 @@ distiller:
   conv_pos_groups: 16
 
   # Transformer encoder
-  encoder_layers: 2
-  encoder_embed_dim: 768
-  encoder_ffn_embed_dim: 3072
+  encoder_layers: 12
+  encoder_embed_dim: 480
+  encoder_ffn_embed_dim: 480
   encoder_attention_heads: 12
   activation_fn: gelu
   layer_norm_first: false
@@ -25,12 +25,12 @@ distiller:
   encoder_layerdrop: 0.0
 
   # Output
-  final_dim: 768
+  final_dim: 480
   out_layer_type: layer-wise
   teacher_final_dim: 768
 
   # Task & loss
-  n_tasks: 3
+  n_tasks: 12
   task_emb_type: layer-wise
   loss_type: l1
   feat_pen_loss: 0.0
@@ -40,7 +40,7 @@ distiller:
   attn_loss: 0.0 # attn loss
   embedding_loss: 1.0 # embedding loss
   temperature: 1.0 
-  pred_layer_id: [4,8,12] # layers for predict head loss
+  pred_layer_id: [1,2,3,4,5,6,7,8,9,10,11,12] # layers for predict head loss
   pred_layer_id_2: [4,8] # layers for hidden & attn loss
 
   # Initialization
