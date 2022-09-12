@@ -16,6 +16,9 @@ import wandb
 import logging
 import editdistance
 import wandb
+import pandas as pd
+import seaborn as sn 
+import matplotlib.pyplot as plt
 from argparse import Namespace
 
 from fairseq.data.dictionary import Dictionary
@@ -271,12 +274,6 @@ class DistillerForPretrain(nn.Module):
         if self.attn_loss > 0:
             logger.info("[DistillerForPretrain] - Enabled attn loss.")
 
-        self.embedding_loss = config.embedding_loss
-        if self.embedding_loss > 0:
-            logger.info("[DistillerForPretrain] - Enabled embedding loss.")
-
-        self.temperature = config.temperature
-
         #! copy value from teacher
         if config.init_teacher_conv_layers:
             logger.info(
@@ -353,14 +350,7 @@ class DistillerForPretrain(nn.Module):
                 teacher_hiddens = teacher_hiddens["hidden_states"][self.config.n_tasks]
                 teacher_hiddens = teacher_hiddens.unsqueeze(1)
             else:
-                if self.config.task_emb_type in ["expand-last", "hnet", "self-hidden", "layer-wise"]:
-                    teacher_hiddens = [
-                        teacher_hiddens["hidden_states"][i]
-                        for i in self.distiller.pred_layer_id
-                    ]
-                else:
-                    teacher_hiddens = teacher_hiddens["hidden_states"][1:]
-                teacher_hiddens = torch.stack(teacher_hiddens, dim=1)  # B x N x T x D
+                teacher_hiddens = teacher_hiddens["hidden_states"][1:]
 
         (
             total_loss,
@@ -433,9 +423,31 @@ class DistillerForPretrain(nn.Module):
         Inputs:
             feat: B x T x D
             pred: B x N x T x D
-            target: B x N x T x D
+            target: 12[B x T x D]
         """
         #! why feat is not same as pred in last dimension(because it is the output of conv)
+        # get the attentions
+        attn_target = []
+        attn_map = []
+        for i in range(self.config.n_tasks):
+            student_hidden = pred.transpose(0, 1)[i] # B x T x D
+            cos_sim = [torch.cosine_similarity(student_hidden, target[j], dim = -1).mean() for j in range(12)]
+            cos_sim = torch.stack(cos_sim, dim = 0)
+            alphas = torch.softmax(cos_sim, dim = 0)
+            attn_target_single = 0
+            for k in range(12):
+                attn_target_single += alphas[k] * target[i]
+            attn_target.append(attn_target_single)
+            if(self.steps % 200 == 0):
+                attn_map.append(alphas)
+        target = torch.stack(attn_target, dim = 0).transpose(0, 1) # B x N x T x D
+        if(self.steps % 200 == 0):
+            attn_map = torch.stack(attn_map, dim = 0)
+            df_cm = pd.DataFrame(attn_map.numpy())
+            plt.figure(figsize=(20,14))
+            sn.heatmap(df_cm, annot=False, cmap="BuPu")
+            plt.savefig(f'/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/pictures/confusion_{self.steps}.png')
+
         # Reconstruction loss
         assert pred.shape == target.shape, (pred.shape, target.shape)
         if self.rec_loss > 0:
@@ -463,116 +475,20 @@ class DistillerForPretrain(nn.Module):
         # Feature loss
         feat_pen = feat.float().pow(2).mean() #? what is feature loss? (maybe it is not important)
 
-        # embedding loss
-        # get pseudo label sequences
-        if self.embedding_loss > 0:
-            embedding_size = teacher_embeddings.shape # B x T x 256
-            teacher_embeddings = teacher_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2]) # BT x 256
+        if(self.steps % 200 == 0):
+            df_cm = pd.DataFrame(data.numpy(),
+            index = [i for i in range(504)],
+            columns = [i for i in range(504)])
 
-            with torch.no_grad():
-                label_embs = self.teacher.model.label_embs_concat
-                label_embs_teacher = label_embs.unsqueeze(1).expand(-1, teacher_embeddings.size(0), -1) # [504, b*t, 256]
-                teacher_embedding_logits = torch.cosine_similarity(teacher_embeddings.float(), label_embs_teacher.float(), dim=-1).type_as(teacher_embeddings)
-                teacher_embedding_logits = teacher_embedding_logits.transpose(0, 1) # [b*t, 504]
-                teacher_embedding_logits =  teacher_embedding_logits / self.temperature
-
-            if self.projection_type == 'type1':
-                student_embeddings = student_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2]) # [b*t, 256]
-                student_embedding_logits = torch.cosine_similarity(student_embeddings.float(), label_embs_teacher.float(), dim=-1).type_as(student_embeddings)
-                student_embedding_logits = student_embedding_logits.transpose(0, 1) # [b*t, 504]
-                student_embedding_logits = student_embedding_logits / self.temperature
-
-            elif self.projection_type == 'type2':
-                student_embedding_logits = student_embeddings.view(embedding_size[0] * embedding_size[1], student_embeddings.shape[2]) # [b*t,504]
-                student_embedding_logits = student_embedding_logits / self.temperature
-
-            if (self.projection_type == 'type1' or self.projection_type == 'type2'):
-                teacher_prob_log = F.log_softmax(teacher_embedding_logits, dim=-1)
-                student_prob_log = F.log_softmax(student_embedding_logits, dim=-1) 
-                emb_loss = F.kl_div(input = student_prob_log,
-                                    target = teacher_prob_log,
-                                    log_target = True,
-                                    reduction = 'batchmean')
-
-            elif self.projection_type == 'type3':
-                with torch.no_grad():
-                    teacher_prob = F.softmax(teacher_embedding_logits, dim = -1)
-                    teacher_label = teacher_prob.argmax(dim=-1)
-                    print()
-                    pos = torch.index_select(label_embs, 0, teacher_label)
-                    negs = label_embs.unsqueeze(1).expand(-1, teacher_embeddings.size(0), -1)
-                    neg_is_pos = (pos == negs).all(-1)
-                    pos = pos.unsqueeze(0)
-                    targets = torch.cat([pos, negs], dim=0)
-                student_embeddings = student_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2])
-                student_logits = torch.cosine_similarity(student_embeddings.float(), targets.float(), dim=-1).type_as(student_embeddings)
-                student_logits /= self.temperature
-                if neg_is_pos.any():
-                    student_logits[1:][neg_is_pos] = float("-inf")
-                student_logits = student_logits.transpose(0, 1) # BT x 505
-                target_list = torch.zeros(student_logits.shape[0]).long().cuda()
-                emb_loss = F.cross_entropy(student_logits, target_list, reduction='mean')
-
-            # valid
-            if (self.steps % 200 == 0 and self.enable_decode):
-                w_errs = 0
-                w_len = 0
-                logger.info(f"[Valid] - begin to valid -- step {self.steps}")
-                with torch.no_grad():
-                    teacher_prob_log_t = teacher_prob_log.view(embedding_size[0], embedding_size[1], -1).float().contiguous().cpu().unsqueeze(0) # 1 x B x T x kinds
-                    student_prob_log_t = student_prob_log.view(embedding_size[0], embedding_size[1], -1).float().contiguous().cpu().unsqueeze(0) # 1 x B x T x kinds
-                    for (teacher_lp, student_lp) in zip(teacher_prob_log_t[0:3], student_prob_log_t[0:3]):
-                        teacher_decoded = None
-                        teacher_decoded = self.decoder.decode(teacher_lp)
-                        if len(teacher_decoded) < 1:
-                            teacher_decoded = None
-                        else:
-                            teacher_decoded = teacher_decoded[0]
-                            if len(teacher_decoded) < 1:
-                                teacher_decoded = None
-                            else:
-                                teacher_decoded = teacher_decoded[0]
-
-                        student_decoded = None
-                        student_decoded = self.decoder.decode(student_lp)
-                        if len(student_decoded) < 1:
-                            student_decoded = None
-                        else:
-                            student_decoded = student_decoded[0]
-                            if len(student_decoded) < 1:
-                                student_decoded = None
-                            else:
-                                student_decoded = student_decoded[0]
-
-                        if(teacher_decoded is not None and student_decoded is not None and "tokens" in teacher_decoded and "tokens" in student_decoded):
-                            teacher_words = teacher_decoded["tokens"]
-                            student_words = student_decoded["tokens"]
-
-                            teacher_string = ''
-                            student_string = ''
-                            for token in teacher_words:
-                                teacher_string += str(int(token))
-                                teacher_string += ' '
-                            for token in student_words:
-                                student_string += str(int(token))
-                                student_string += ' '
-                            logger.info(f'teacher string: {teacher_string}')
-                            logger.info(f'student string: {student_string}')
-                            w_errs += editdistance.eval(teacher_string.split(" "), student_string.split(" "))
-                            w_len += len(teacher_string)
-
-                    logger.info(f'wer: {w_errs/w_len}')
-                    wandb.log({'wer': w_errs/w_len})
-        else:
-            emb_loss = 0
         self.steps += 1
 
         total_loss = (
             rec_loss * self.rec_loss
             + feat_pen * self.config.feat_pen_loss
             + sim_loss * self.cosine_loss
-            + emb_loss * self.embedding_loss
         )
+
+        emb_loss = 0
 
         return total_loss, rec_loss, rec_layer_loss, feat_pen, sim_loss, sim_layer_loss, emb_loss
 
