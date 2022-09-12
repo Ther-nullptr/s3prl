@@ -608,5 +608,5 @@ class HubertModel(torch.nn.Module):
         self.target_glu = None
         self.final_proj = None
 
-    def get_embeddings(self, x):
-        return self.final_proj(x)
+    def get_embeddings(self, x, masked_indices, unmasked_indices):
+        return self.final_proj(x[masked_indices]), self.final_proj(x[unmasked_indices])
