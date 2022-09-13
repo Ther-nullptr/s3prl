@@ -318,7 +318,11 @@ class DistillerModel(nn.Module):
 
         embeddings = self.get_embeddings(hidden) # B x T x E
 
-        return feat, feat_final, pred, pad_mask, embeddings
+        if get_hidden:
+            return feat, feat_final, pred, pad_mask, layer_hiddens, embeddings
+        
+        else:
+            return feat, feat_final, pred, pad_mask, embeddings
 
     def cal_pad_mask(self, pad_mask, max_len):
         """Calculates pad mask after conv."""

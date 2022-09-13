@@ -40,7 +40,7 @@ class UpstreamExpert(UpstreamBase):
         return 320
 
     def forward(self, wavs, no_pred=False):
-        _, feat_final, pred, pad_mask, layer_hidden = self.model(
+        _, feat_final, pred, pad_mask, layer_hidden, _ = self.model(
             wavs, get_hidden=True, no_pred=no_pred
         )
         # pred: B x N x T x D

@@ -54,3 +54,13 @@ def distilhubert_full(*args, **kwargs):
     ckpt="/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/distill_hubert/states-epoch-8.ckpt"
     print("Use distilhubert_full model")
     return distiller_local(ckpt=ckpt)
+
+def distilhubert_celoss(*args, **kwargs):
+    ckpt="/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/distill_hubert_w_celoss/states-epoch-1.ckpt"
+    print("Use distilhubert_celoss model")
+    return distiller_local(ckpt=ckpt)
+
+def distilhubert_baseline(*args, **kwargs):
+    ckpt="/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/distill_hubert_fp16/states-epoch-1.ckpt"
+    print("Use distilhubert_baseline model")
+    return distiller_local(ckpt=ckpt)
