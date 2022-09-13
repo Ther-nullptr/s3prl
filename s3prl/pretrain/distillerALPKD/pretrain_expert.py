@@ -429,25 +429,26 @@ class DistillerForPretrain(nn.Module):
         # get the attentions
         attn_target = []
         attn_map = []
-        for i in range(self.config.n_tasks):
+        for i in range(self.config.encoder_layers):
             student_hidden = pred.transpose(0, 1)[i] # B x T x D
             cos_sim = [torch.cosine_similarity(student_hidden, target[j], dim = -1).mean() for j in range(i*4, i*4 + 4)]
             cos_sim = torch.stack(cos_sim, dim = 0)
-            alphas = torch.softmax(cos_sim * 2, dim = 0)
+            alphas = torch.softmax(cos_sim * 4, dim = 0)
             attn_target_single = 0
-            for k in range(4):
-                attn_target_single += alphas[k] * target[i*4 + k]
+            for k in range(12 // self.config.encoder_layers):
+                attn_target_single += alphas[k] * target[i*(12 // self.config.encoder_layers) + k]
             attn_target.append(attn_target_single)
-            if(self.steps % 100 == 0):
+            if(self.steps % 200 == 0):
                 attn_map.append(alphas)
         target = torch.stack(attn_target, dim = 0).transpose(0, 1) # B x N x T x D
-        if(self.steps % 100 == 0):
+        if(self.steps % 200 == 0):
             attn_map = torch.stack(attn_map, dim = 0)
             df_cm = pd.DataFrame(attn_map.cpu().detach().numpy())
             print(df_cm)
+            df_cm.to_csv(f'{self.config.picture_path}/confusion_{self.steps}.csv')
             plt.figure(figsize=(20,14))
             sn.heatmap(df_cm, annot=False, cmap="BuPu")
-            plt.savefig(f'/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/pictures_2/confusion_{self.steps}.png')
+            plt.savefig(f'{self.config.picture_path}/confusion_{self.steps}.png')
 
         # Reconstruction loss
         assert pred.shape == target.shape, (pred.shape, target.shape)

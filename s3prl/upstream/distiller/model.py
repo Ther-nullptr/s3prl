@@ -105,6 +105,11 @@ class DistillerConfig:
             config.get("dictionary_path", 'dict.ltr.txt')
         )
 
+        # picture
+        self.picture_path = str(
+            config.get("picture_path", '')
+        )
+
 class DistillerModel(nn.Module):
     """
     Distiller Model
@@ -309,12 +314,12 @@ class DistillerModel(nn.Module):
             )
             # B x N x T x D
 
-        if (not no_pred) and self.task_emb_type == "layer-wise": #  B x T x stuD -> B x T x teaD -> B x N x T x teaD
+        if (not no_pred) and self.task_emb_type == "layer-wise": 
             pred = []
             for i, proj in enumerate(self.output_layer):
                 result = proj(layer_hiddens[i])
                 pred.append(result)
-            pred = torch.stack(pred, dim=1) # B x N x T x teaD
+            pred = torch.stack(pred, dim=1)
 
         embeddings = self.get_embeddings(hidden) # B x T x E
 

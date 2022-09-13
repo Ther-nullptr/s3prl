@@ -26,11 +26,11 @@ distiller:
 
   # Output
   final_dim: 768
-  out_layer_type: expand-last
+  out_layer_type: layer-wise
 
   # Task & loss
   n_tasks: 3
-  task_emb_type: expand-last
+  task_emb_type: layer-wise
   loss_type: l1
   feat_pen_loss: 0.0
   rec_loss: 1.0
@@ -39,8 +39,6 @@ distiller:
   attn_loss: 0.0 # attn loss
   embedding_loss: 0.0 # embedding loss
   temperature: 0.1 
-  pred_layer_id: [4,8,12] # layers for predict head loss
-  pred_layer_id_2: [4,8] # layers for hidden & attn loss
 
   # Initialization
   init_teacher_conv_layers: true
@@ -53,6 +51,9 @@ distiller:
 
   # proj
   projection_type: type2
+
+  # picture
+  picture_path: /mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/pictures_alpkd_l2l
 
 teacher:
   model: hubert
