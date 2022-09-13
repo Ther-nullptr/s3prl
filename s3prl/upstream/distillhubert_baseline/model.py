@@ -14,9 +14,6 @@ from .module import (
     GradMultiply,
 )
 
-from fairseq.data.data_utils import compute_mask_indices
-from fairseq.utils import index_put
-
 logger = logging.getLogger(__name__)
 
 
@@ -76,10 +73,6 @@ class DistillerConfig:
         self.embedding_loss = float(config.get("embedding_loss", 0.0))
         self.temperature = float(config.get("temperature", 0.0))
 
-        # mask
-        self.mask_prob = float(config.get("mask_prob", 0.80))
-        self.mask_length = int(config.get("mask_length", 10))
-
         # When task_emb_type == 'expand-last' only
         self.pred_layer_id = list(
             config.get("pred_layer_id", range(1, self.n_tasks + 1))
@@ -135,8 +128,6 @@ class DistillerModel(nn.Module):
         self.n_tasks = config.n_tasks
         self.task_emb_type = config.task_emb_type
 
-        self.mask_emb = torch.load('/mnt/lustre/sjtu/home/xc915/superb/upstream_model/mask_emb.pt')
-
         final_emb_size = config.encoder_embed_dim
         if self.task_emb_type == "add":
             self.task_embedding = nn.Embedding(config.n_tasks, config.encoder_embed_dim)
@@ -188,9 +179,6 @@ class DistillerModel(nn.Module):
         else:
             self.encoder = nn.GELU()
 
-        self.mask_prob = config.mask_prob
-        self.mask_length = config.mask_length
-
         final_dim = config.final_dim * (
             1 if self.task_emb_type != "expand-last" else self.n_tasks
         )
@@ -221,26 +209,6 @@ class DistillerModel(nn.Module):
             self.final_proj = nn.Linear(config.final_dim, 256)
         else:
             self.final_proj = nn.Linear(config.final_dim, 504)
-
-    def apply_mask(
-        self,
-        x,
-        padding_mask,
-        mask_indices=None,
-    ):
-        B, T, C = x.shape
-        if self.mask_prob > 0:
-            mask_indices = torch.zeros(B*T)
-            for i in range(B*T):
-                if (i//10)%2 == 0:
-                    mask_indices[i] = True
-            mask_indices = mask_indices.reshape(B, T)
-            mask_indices = mask_indices.to(x.device)
-            x[mask_indices.bool()] = self.mask_emb.half().cuda()
-        else:
-            mask_indices = None
-
-        return x, mask_indices
 
     def forward_feature(self, wave, pad_mask):
         """Forward feature extractor"""
@@ -312,13 +280,6 @@ class DistillerModel(nn.Module):
         feat_final = feat_final.reshape(b_sz * n_sz, t_sz, -1)
         # BN x T x D
 
-        # apply the mask
-        feat_final, mask_indices = self.apply_mask(
-            feat_final,
-            pad_mask,
-            mask_indices=None
-        )
-
         layer_hiddens = []
         if self.config.encoder_layers > 0:
             get_hidden_tmp = (
@@ -355,9 +316,9 @@ class DistillerModel(nn.Module):
                 pred.append(result)
             pred = torch.stack(pred, dim=1) # B x N x T x teaD
 
-        masked_embeddings, no_masked_embeddings, masked_indices, no_masked_indices = self.get_embeddings(hidden, mask_indices, pad_mask) # B x T x E
+        embeddings = self.get_embeddings(hidden) # B x T x E
 
-        return feat, feat_final, pred, pad_mask, masked_embeddings, no_masked_embeddings, masked_indices, no_masked_indices
+        return feat, feat_final, pred, pad_mask, embeddings
 
     def cal_pad_mask(self, pad_mask, max_len):
         """Calculates pad mask after conv."""
@@ -377,8 +338,6 @@ class DistillerModel(nn.Module):
     def generate_task_id(self, device):
         return torch.arange(self.n_tasks, device=device, dtype=torch.long)
 
-    def get_embeddings(self, x, mask_indices, pad_mask):
-        masked_indices = mask_indices.bool()
-        no_masked_indices = ~mask_indices.bool()
-        return self.final_proj(x[masked_indices]), self.final_proj(x[no_masked_indices]), masked_indices, no_masked_indices
+    def get_embeddings(self, x):
+        return self.final_proj(x)
 

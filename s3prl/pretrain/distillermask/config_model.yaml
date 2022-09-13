@@ -47,6 +47,10 @@ distiller:
   init_teacher_encoder_layers: true
   get_hidden: false
 
+  # mask
+  mask_prob: 0.80
+  mask_length: 10
+
   # decode
   dictionary_path: /mnt/lustre/sjtu/home/xc915/superb/dataset/librispeech_finetuning_data/100h/dict.ltr.txt
   enable_decode: True

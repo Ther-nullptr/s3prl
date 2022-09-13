@@ -38,8 +38,8 @@ distiller:
   cosine_loss: 1.0  # cosine similarity loss
   hidden_loss: 0.0  # hidden loss
   attn_loss: 0.0 # attn loss
-  embedding_loss: 1.0 # embedding loss
-  temperature: 1.0 
+  embedding_loss: 0.0 # embedding loss
+  temperature: 0.0 
   pred_layer_id: [1,2,3,4,5,6,7,8,9,10,11,12] # layers for predict head loss
   pred_layer_id_2: [4,8] # layers for hidden & attn loss
 
