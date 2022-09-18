@@ -431,7 +431,7 @@ class DistillerForPretrain(nn.Module):
         attn_map = []
         for i in range(self.config.encoder_layers):
             student_hidden = pred.transpose(0, 1)[i] # B x T x D
-            cos_sim = [torch.cosine_similarity(student_hidden, target[j], dim = -1).mean() for j in range(i*4, i*4 + 4)]
+            cos_sim = [torch.cosine_similarity(student_hidden, target[j], dim = -1).mean() for j in range(i*(12 // self.config.encoder_layers), (i + 1)*(12 // self.config.encoder_layers))]
             cos_sim = torch.stack(cos_sim, dim = 0)
             alphas = torch.softmax(cos_sim * 4, dim = 0)
             attn_target_single = 0

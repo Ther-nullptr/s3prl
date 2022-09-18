@@ -14,6 +14,8 @@ from .module import (
     GradMultiply,
 )
 
+import os
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,7 +73,8 @@ class DistillerConfig:
         self.hidden_loss = float(config.get("hidden_loss", 0.0))
         self.attn_loss = float(config.get("attn_loss", 0.0))
         self.embedding_loss = float(config.get("embedding_loss", 0.0))
-        self.temperature = float(config.get("temperature", 0.0))
+        self.temperature = float(config.get("temperature", 1.0))
+        self.use_temperature = bool(config.get("use_temperature", True))
 
         # When task_emb_type == 'expand-last' only
         self.pred_layer_id = list(
@@ -109,6 +112,7 @@ class DistillerConfig:
         self.picture_path = str(
             config.get("picture_path", '')
         )
+
 
 class DistillerModel(nn.Module):
     """

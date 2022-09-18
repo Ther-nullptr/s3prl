@@ -64,3 +64,33 @@ def distilhubert_baseline(*args, **kwargs):
     ckpt="/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/distill_hubert_fp16/states-epoch-1.ckpt"
     print("Use distilhubert_baseline model")
     return distiller_local(ckpt=ckpt)
+
+def distilhubert_w_emb_loss_only(*args, **kwargs):
+    ckpt="/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/distill_hubert_w_embloss_only/states-epoch-1.ckpt"
+    print("Use distilhubert_w_emb_loss_only model")
+    return distiller_local(ckpt=ckpt)
+
+def distill_hubert_w_embloss_high_temp(*args, **kwargs):
+    ckpt="/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/distill_hubert_w_embloss_high_temp/states-epoch-1.ckpt"
+    print("Use distill_hubert_w_embloss_high_temp model")
+    return distiller_local(ckpt=ckpt)
+
+def distill_hubert_alpkd_l2l(*args, **kwargs):
+    ckpt="/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/distill_hubert_alpkd_l2l/states-epoch-1.ckpt"
+    print("Use distill_hubert_alpkd_l2l model")
+    return distiller_local(ckpt=ckpt)
+
+def fithubert_baseline(*args, **kwargs):
+    ckpt="/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/distill_fithubert_fp16/states-epoch-1.ckpt"
+    print("Use fithubert_baseline model")
+    return distiller_local(ckpt=ckpt)
+
+def distill_hubert_type2_student_no_temp(*args, **kwargs):
+    ckpt="/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/distill_hubert_type2_student_no_temp/states-epoch-1.ckpt"
+    print("Use distill_hubert_type2_student_no_temp model")
+    return distiller_local(ckpt=ckpt)
+
+def distill_hubert_type3_student_no_temp(*args, **kwargs):
+    ckpt="/mnt/lustre/sjtu/home/xc915/superb/wyj-s3prl/s3prl/result/pretrain/distill_hubert_type3_student_no_temp/states-epoch-1.ckpt"
+    print("Use distill_hubert_type3_student_no_temp model")
+    return distiller_local(ckpt=ckpt)

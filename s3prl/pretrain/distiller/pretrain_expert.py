@@ -276,6 +276,7 @@ class DistillerForPretrain(nn.Module):
             logger.info("[DistillerForPretrain] - Enabled embedding loss.")
 
         self.temperature = config.temperature
+        self.use_temperature = config.use_temperature
 
         #! copy value from teacher
         if config.init_teacher_conv_layers:
@@ -480,11 +481,13 @@ class DistillerForPretrain(nn.Module):
                 student_embeddings = student_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2]) # [b*t, 256]
                 student_embedding_logits = torch.cosine_similarity(student_embeddings.float(), label_embs_teacher.float(), dim=-1).type_as(student_embeddings)
                 student_embedding_logits = student_embedding_logits.transpose(0, 1) # [b*t, 504]
-                student_embedding_logits = student_embedding_logits / self.temperature
+                if self.use_temperature:
+                    student_embedding_logits = student_embedding_logits / self.temperature
 
             elif self.projection_type == 'type2':
                 student_embedding_logits = student_embeddings.view(embedding_size[0] * embedding_size[1], student_embeddings.shape[2]) # [b*t,504]
-                student_embedding_logits = student_embedding_logits / self.temperature
+                if self.use_temperature:
+                    student_embedding_logits = student_embedding_logits / self.temperature
 
             if (self.projection_type == 'type1' or self.projection_type == 'type2'):
                 teacher_prob_log = F.log_softmax(teacher_embedding_logits, dim=-1)
@@ -498,7 +501,6 @@ class DistillerForPretrain(nn.Module):
                 with torch.no_grad():
                     teacher_prob = F.softmax(teacher_embedding_logits, dim = -1)
                     teacher_label = teacher_prob.argmax(dim=-1)
-                    print()
                     pos = torch.index_select(label_embs, 0, teacher_label)
                     negs = label_embs.unsqueeze(1).expand(-1, teacher_embeddings.size(0), -1)
                     neg_is_pos = (pos == negs).all(-1)
@@ -506,7 +508,8 @@ class DistillerForPretrain(nn.Module):
                     targets = torch.cat([pos, negs], dim=0)
                 student_embeddings = student_embeddings.view(embedding_size[0] * embedding_size[1], embedding_size[2])
                 student_logits = torch.cosine_similarity(student_embeddings.float(), targets.float(), dim=-1).type_as(student_embeddings)
-                student_logits /= self.temperature
+                if self.use_temperature:
+                    student_logits /= self.temperature
                 if neg_is_pos.any():
                     student_logits[1:][neg_is_pos] = float("-inf")
                 student_logits = student_logits.transpose(0, 1) # BT x 505

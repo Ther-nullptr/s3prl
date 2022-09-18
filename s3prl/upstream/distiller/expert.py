@@ -39,7 +39,7 @@ class UpstreamExpert(UpstreamBase):
     def get_downsample_rates(self, key: str) -> int:
         return 320
 
-    def forward(self, wavs, no_pred=False):
+    def forward(self, wavs, no_pred=True):
         _, feat_final, pred, pad_mask, layer_hidden, _ = self.model(
             wavs, get_hidden=True, no_pred=no_pred
         )
