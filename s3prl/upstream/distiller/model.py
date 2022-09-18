@@ -113,6 +113,14 @@ class DistillerConfig:
             config.get("picture_path", '')
         )
 
+        # kmeans
+        self.kmeans_path = str(
+            config.get("kmeans_path", '')
+        )
+        self.kmeans_layer = int(
+            config.get("kmeans_layer", 12)
+        )
+
 
 class DistillerModel(nn.Module):
     """
@@ -216,8 +224,10 @@ class DistillerModel(nn.Module):
 
         if config.projection_type == 'type1' or config.projection_type == 'type3':
             self.final_proj = nn.Linear(config.final_dim, 256)
-        else:
+        elif config.projection_type == 'type2':
             self.final_proj = nn.Linear(config.final_dim, 504)
+        else:
+            self.final_proj = nn.Linear(config.final_dim, 500)
 
     def forward_feature(self, wave, pad_mask):
         """Forward feature extractor"""
